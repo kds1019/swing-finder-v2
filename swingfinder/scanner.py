@@ -805,15 +805,23 @@ def scanner_ui(TIINGO_TOKEN):
 
     # =========================================================================================================
 
-    # ---------- Multi-Watchlist Gist System (No Default) ----------
-    import requests, json
+   # ---------- Multi-Watchlist Gist System (Improved v2.3) ----------
+    import requests, json, os
 
-    # ----------------- Gist Helpers -----------------
     def load_watchlists_from_gist():
         """Load all saved watchlists (dict of {name: [tickers]}) from GitHub Gist."""
         try:
-            token = st.secrets.get("GITHUB_GIST_TOKEN", "")
-            gist_id = st.secrets.get("GIST_ID", "")
+            token = (
+                st.secrets.get("GITHUB_GIST_TOKEN")
+                or os.getenv("GITHUB_GIST_TOKEN")
+                or st.secrets.get("GITHUB_TOKEN")
+            )
+            gist_id = (
+                st.secrets.get("GIST_ID")
+                or os.getenv("GIST_ID")
+                or st.secrets.get("GIST_WATCHLIST_ID")
+            )
+
             if not token or not gist_id:
                 st.warning("⚠️ Missing Gist credentials.")
                 return {}
@@ -829,21 +837,40 @@ def scanner_ui(TIINGO_TOKEN):
             if not files:
                 return {}
 
-            content = list(files.values())[0]["content"]
+            # Expect watchlist.json, fallback to first file
+            content = (
+                files.get("watchlist.json", next(iter(files.values()), {}))
+                .get("content", "{}")
+            )
+
             data = json.loads(content)
             if isinstance(data, list):
-                # backward compatible with old single-list format
+                # backward-compatible single list
                 return {"Unnamed": data}
+
+            if not isinstance(data, dict):
+                return {}
             return data
+
         except Exception as e:
             st.warning(f"⚠️ Could not load from Gist: {e}")
             return {}
 
-    def save_watchlists_to_gist(watchlists_dict):
+
+    def save_watchlists_to_gist(watchlists_dict: dict):
         """Save all watchlists (dict of {name: [tickers]}) to GitHub Gist."""
         try:
-            token = st.secrets.get("GITHUB_GIST_TOKEN", "")
-            gist_id = st.secrets.get("GIST_ID", "")
+            token = (
+                st.secrets.get("GITHUB_GIST_TOKEN")
+                or os.getenv("GITHUB_GIST_TOKEN")
+                or st.secrets.get("GITHUB_TOKEN")
+            )
+            gist_id = (
+                st.secrets.get("GIST_ID")
+                or os.getenv("GIST_ID")
+                or st.secrets.get("GIST_WATCHLIST_ID")
+            )
+
             if not token or not gist_id:
                 st.warning("⚠️ Missing Gist credentials in secrets.")
                 return
@@ -851,11 +878,18 @@ def scanner_ui(TIINGO_TOKEN):
             url = f"https://api.github.com/gists/{gist_id}"
             headers = {"Authorization": f"token {token}"}
             payload = {
-                "files": {"watchlist.json": {"content": json.dumps(watchlists_dict, indent=2)}}
+                "files": {
+                    "watchlist.json": {
+                        "content": json.dumps(watchlists_dict, indent=2)
+                    }
+                }
             }
             r = requests.patch(url, headers=headers, json=payload, timeout=10)
             if not r.ok:
                 st.warning(f"⚠️ Failed to save watchlists: {r.status_code}")
+            else:
+                st.toast("☁️ Watchlists synced to cloud!", icon="✅")
+
         except Exception as e:
             st.warning(f"⚠️ Could not save to Gist: {e}")
 
@@ -893,8 +927,8 @@ def scanner_ui(TIINGO_TOKEN):
                 if st.session_state.active_watchlist in all_names
                 else len(all_names),
             )
-            
-        # 🗑️ Delete current watchlist (with working confirmation)
+
+        # 🗑️ Delete current watchlist
         if selected_name not in ["➕ Create New"] and all_names:
             with st.expander("⚠️ Delete This Watchlist"):
                 st.warning(f"Deleting '{selected_name}' will permanently remove it from cloud storage.")
@@ -908,8 +942,6 @@ def scanner_ui(TIINGO_TOKEN):
                         st.rerun()
                     except Exception as e:
                         st.error(f"Failed to delete '{selected_name}': {e}")
-
-        
 
         # --- Create New Watchlist ---
         if selected_name == "➕ Create New":
@@ -953,9 +985,8 @@ def scanner_ui(TIINGO_TOKEN):
                         st.rerun()
                     else:
                         st.info("All entered symbols already exist.")
-                                
 
-            # --- Display Watchlist (Dropdown Layout) ---
+            # --- Display Watchlist ---
             if st.session_state.watchlist:
                 st.markdown("---")
                 st.markdown(f"**Current Watchlist ({len(st.session_state.watchlist)})**")
@@ -969,10 +1000,9 @@ def scanner_ui(TIINGO_TOKEN):
                 c1, c2, c3 = st.columns([2, 2, 3])
                 if c1.button("🔍 Analyze", key="wl_analyze_selected"):
                     st.session_state["analyze_symbol"] = selected
-                    st.session_state["active_page"] = "Analyzer"  # 👈 add this line
+                    st.session_state["active_page"] = "Analyzer"
                     st.toast(f"Sent {selected} to Analyzer", icon="🔍")
-                    st.rerun()  # 👈 triggers navigation immediately
-
+                    st.rerun()
 
                 if c2.button("❌ Remove", key="wl_remove_selected"):
                     st.session_state.watchlist.remove(selected)
@@ -990,7 +1020,7 @@ def scanner_ui(TIINGO_TOKEN):
                     ] = []
                     save_watchlists_to_gist(st.session_state.watchlists)
                     st.warning("Cleared and synced watchlist.")
-                    
+
             # --- Watchlist Screener trigger ---
             if st.button("🎯 Run Watchlist Screener", use_container_width=True):
                 if not st.session_state.watchlist:
@@ -1008,4 +1038,5 @@ def scanner_ui(TIINGO_TOKEN):
                     st.session_state["watchlist_debug"] = debug_log
                     st.session_state["show_watchlist_results"] = True
                     st.rerun()
+
 
