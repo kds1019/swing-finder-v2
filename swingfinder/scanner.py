@@ -969,8 +969,10 @@ def scanner_ui(TIINGO_TOKEN):
                 c1, c2, c3 = st.columns([2, 2, 3])
                 if c1.button("🔍 Analyze", key="wl_analyze_selected"):
                     st.session_state["analyze_symbol"] = selected
+                    st.session_state["active_page"] = "Analyzer"  # 👈 add this line
                     st.toast(f"Sent {selected} to Analyzer", icon="🔍")
-                    st.rerun()
+                    st.rerun()  # 👈 triggers navigation immediately
+
 
                 if c2.button("❌ Remove", key="wl_remove_selected"):
                     st.session_state.watchlist.remove(selected)
