@@ -6,6 +6,7 @@ from utils.tiingo_api import tiingo_history
 from utils.indicators import compute_indicators
 from utils.storage import load_json, save_json
 
+
 # ---------------- Analyzer UI ----------------
 def analyzer_ui(TIINGO_TOKEN):
     """
@@ -14,11 +15,10 @@ def analyzer_ui(TIINGO_TOKEN):
     # 🔹 Paste your full legacy Analyzer code below this comment
     # Make sure to replace any references to 'TIINGO_TOKEN' with the parameter (same name)
     # and to remove Streamlit page titles already handled in app.py.
-    
+
     if st.button("⬅️ Back to Scanner"):
         st.session_state["active_page"] = "Scanner"
         st.rerun()
-
 
     # ---------------- Analyzer ----------------
     st.subheader("🔍 Analyzer — with RSI, MACD, ATR")
@@ -36,191 +36,196 @@ def analyzer_ui(TIINGO_TOKEN):
     run_analysis = st.button("Analyze") or auto_trigger
 
     if run_analysis:
-        df = tiingo_history(symbol, TIINGO_TOKEN, 200)  # fetch 200 days instead of 120
-        if not df.empty:
-            # --- Indicators ---
-            df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
-            df["EMA50"] = df["Close"].ewm(span=50, adjust=False).mean()
+        df = tiingo_history(symbol, TIINGO_TOKEN, 200)
 
-            # RSI (14)
-            delta = df["Close"].diff()
-            gain = np.where(delta > 0, delta, 0)
-            loss = np.where(delta < 0, -delta, 0)
-            roll_up = pd.Series(gain).rolling(14).mean()
-            roll_down = pd.Series(loss).rolling(14).mean()
-            rs = roll_up / (roll_down + 1e-9)
-            df["RSI14"] = 100.0 - (100.0 / (1.0 + rs))
+        if df is None or df.empty:
+            st.warning("⚠️ No historical data returned for this ticker.")
+            st.stop()  # 🧠 pauses execution safely, doesn’t kill entire page
 
-            # MACD (12,26,9)
-            ema12 = df["Close"].ewm(span=12, adjust=False).mean()
-            ema26 = df["Close"].ewm(span=26, adjust=False).mean()
-            df["MACD"] = ema12 - ema26
-            df["MACD_SIGNAL"] = df["MACD"].ewm(span=9, adjust=False).mean()
-            df["MACD_HIST"] = df["MACD"] - df["MACD_SIGNAL"]
+        # --- Indicators ---
+        df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
+        df["EMA50"] = df["Close"].ewm(span=50, adjust=False).mean()
 
-            # ATR (14)
-            high_low = df["High"] - df["Low"]
-            high_close = np.abs(df["High"] - df["Close"].shift(1))
-            low_close = np.abs(df["Low"] - df["Close"].shift(1))
-            tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-            df["ATR14"] = tr.rolling(14).mean()
+        # RSI (14)
+        delta = df["Close"].diff()
+        gain = np.where(delta > 0, delta, 0)
+        loss = np.where(delta < 0, -delta, 0)
+        roll_up = pd.Series(gain).rolling(14).mean()
+        roll_down = pd.Series(loss).rolling(14).mean()
+        rs = roll_up / (roll_down + 1e-9)
+        df["RSI14"] = 100.0 - (100.0 / (1.0 + rs))
 
-            # --- Plot main chart + subplots ---
-            from plotly.subplots import make_subplots
+        # MACD (12,26,9)
+        ema12 = df["Close"].ewm(span=12, adjust=False).mean()
+        ema26 = df["Close"].ewm(span=26, adjust=False).mean()
+        df["MACD"] = ema12 - ema26
+        df["MACD_SIGNAL"] = df["MACD"].ewm(span=9, adjust=False).mean()
+        df["MACD_HIST"] = df["MACD"] - df["MACD_SIGNAL"]
 
-            fig = make_subplots(
-                rows=3, cols=1,
-                shared_xaxes=True,
-                vertical_spacing=0.05,
-                row_heights=[0.6, 0.2, 0.2],
-                subplot_titles=(f"{symbol} Price & EMAs", "MACD", "RSI(14)")
+        # ATR (14)
+        high_low = df["High"] - df["Low"]
+        high_close = np.abs(df["High"] - df["Close"].shift(1))
+        low_close = np.abs(df["Low"] - df["Close"].shift(1))
+        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        df["ATR14"] = tr.rolling(14).mean()
+
+        # --- Plot main chart + subplots ---
+        from plotly.subplots import make_subplots
+
+        fig = make_subplots(
+            rows=3, cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.05,
+            row_heights=[0.6, 0.2, 0.2],
+            subplot_titles=(f"{symbol} Price & EMAs", "MACD", "RSI(14)")
+        )
+
+        # Candlestick + EMAs
+        fig.add_trace(go.Candlestick(
+            x=df["Date"], open=df["Open"], high=df["High"],
+            low=df["Low"], close=df["Close"], name="Price"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df["Date"], y=df["EMA20"], mode="lines", name="EMA20"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df["Date"], y=df["EMA50"], mode="lines", name="EMA50"), row=1, col=1)
+
+        # MACD
+        fig.add_trace(go.Scatter(x=df["Date"], y=df["MACD"], mode="lines", name="MACD"), row=2, col=1)
+        fig.add_trace(go.Scatter(x=df["Date"], y=df["MACD_SIGNAL"], mode="lines", name="Signal"), row=2, col=1)
+        fig.add_trace(go.Bar(x=df["Date"], y=df["MACD_HIST"], name="Hist"), row=2, col=1)
+
+        # RSI
+        fig.add_trace(go.Scatter(x=df["Date"], y=df["RSI14"], mode="lines", name="RSI(14)"), row=3, col=1)
+        fig.add_hline(y=70, line_dash="dot", line_color="red", row=3, col=1)
+        fig.add_hline(y=30, line_dash="dot", line_color="green", row=3, col=1)
+
+        fig.update_layout(height=800, xaxis_rangeslider_visible=False)
+        st.plotly_chart(fig, use_container_width=True)
+
+        # --- Metrics ---
+        st.metric("Last Close", f"${df.iloc[-1]['Close']:.2f}")
+        st.metric("ATR(14)", f"{df.iloc[-1]['ATR14']:.2f}")
+        st.metric("RSI(14)", f"{df.iloc[-1]['RSI14']:.1f}")
+        st.metric("MACD", f"{df.iloc[-1]['MACD']:.2f}")
+
+        # --- Forecast, ML Edge, Seasonality, and Sentiment ---
+        st.divider()
+        st.subheader("🧠 Forecasts, ML Edge, Seasonality & Sentiment")
+
+        try:
+            # ===================== 1️⃣ TinyToy Forecast =====================
+            from sklearn.linear_model import LinearRegression
+
+            lookback = 20
+            df_recent = df.tail(lookback).reset_index(drop=True)
+            df_recent["Index"] = np.arange(len(df_recent))
+
+            model = LinearRegression().fit(df_recent[["Index"]], df_recent["Close"])
+            predicted_price = float(model.predict([[len(df_recent)]])[0])
+            last_price = float(df_recent["Close"].iloc[-1])
+            forecast_change = predicted_price - last_price
+            forecast_pct = (forecast_change / last_price) * 100
+            direction = "⬆️ Up" if forecast_change > 0 else "⬇️ Down"
+
+            # ===================== 2️⃣ ML Edge =====================
+            ema_trend = (df_recent["EMA20"].iloc[-1] - df_recent["EMA50"].iloc[-1]) / df_recent["Close"].iloc[-1]
+            rsi_val = df_recent["RSI14"].iloc[-1]
+            rsi_edge = (50 - abs(50 - rsi_val)) / 50
+            atr_vol = df_recent["ATR14"].iloc[-1] / df_recent["Close"].iloc[-1]
+            ml_edge_score = max(0.0, min(1.0, (ema_trend * 5 + rsi_edge - atr_vol * 2)))
+
+            # ===================== 3️⃣ Seasonality =====================
+            df["Month"] = pd.to_datetime(df["Date"]).dt.month
+            monthly_returns = df.groupby("Month")["Close"].apply(lambda x: x.pct_change().mean() * 100)
+            this_month = pd.Timestamp.now().month
+            seasonality_avg = float(monthly_returns.get(this_month, 0.0))
+
+            # ===================== 4️⃣ Sentiment =====================
+            import os
+            import requests
+            from textblob import TextBlob
+
+            sentiment_score = 0.0
+            try:
+                api_key = os.getenv("TIINGO_API_KEY")
+                news_url = f"https://api.tiingo.com/tiingo/news?tickers={symbol}&token={api_key}"
+                r = requests.get(news_url, timeout=5)
+                if r.ok:
+                    articles = r.json()[:5]
+                    sentiments = []
+                    for art in articles:
+                        title = art.get("title", "")
+                        polarity = TextBlob(title).sentiment.polarity
+                        sentiments.append(polarity)
+                    if sentiments:
+                        sentiment_score = np.mean(sentiments)
+            except Exception:
+                pass
+
+            sentiment_label = (
+                "😊 Positive" if sentiment_score > 0.05 else
+                "😐 Neutral" if sentiment_score >= -0.05 else
+                "😟 Negative"
             )
 
-            # Candlestick + EMAs
-            fig.add_trace(go.Candlestick(
-                x=df["Date"], open=df["Open"], high=df["High"],
-                low=df["Low"], close=df["Close"], name="Price"), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df["Date"], y=df["EMA20"], mode="lines", name="EMA20"), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df["Date"], y=df["EMA50"], mode="lines", name="EMA50"), row=1, col=1)
+            # ===================== 5️⃣ Visual Dashboard =====================
+            c1, c2, c3, c4 = st.columns(4)
 
-            # MACD
-            fig.add_trace(go.Scatter(x=df["Date"], y=df["MACD"], mode="lines", name="MACD"), row=2, col=1)
-            fig.add_trace(go.Scatter(x=df["Date"], y=df["MACD_SIGNAL"], mode="lines", name="Signal"), row=2, col=1)
-            fig.add_trace(go.Bar(x=df["Date"], y=df["MACD_HIST"], name="Hist"), row=2, col=1)
+            # 🧭 Forecast Color
+            forecast_color = "green" if forecast_change > 0 else "red"
+            forecast_arrow = "⬆️" if forecast_change > 0 else "⬇️"
 
-            # RSI
-            fig.add_trace(go.Scatter(x=df["Date"], y=df["RSI14"], mode="lines", name="RSI(14)"), row=3, col=1)
-            fig.add_hline(y=70, line_dash="dot", line_color="red", row=3, col=1)
-            fig.add_hline(y=30, line_dash="dot", line_color="green", row=3, col=1)
+            # 🧠 ML Edge Color
+            if ml_edge_score >= 0.7:
+                edge_color = "green"
+                edge_label = "Strong Edge"
+            elif ml_edge_score >= 0.4:
+                edge_color = "orange"
+                edge_label = "Moderate Edge"
+            else:
+                edge_color = "red"
+                edge_label = "Weak Edge"
 
-            fig.update_layout(height=800, xaxis_rangeslider_visible=False)
-            st.plotly_chart(fig, use_container_width=True)
+            # 🌤️ Seasonality Color
+            season_color = "green" if seasonality_avg > 0 else "red"
 
-            # --- Metrics ---
-            st.metric("Last Close", f"${df.iloc[-1]['Close']:.2f}")
-            st.metric("ATR(14)", f"{df.iloc[-1]['ATR14']:.2f}")
-            st.metric("RSI(14)", f"{df.iloc[-1]['RSI14']:.1f}")
-            st.metric("MACD", f"{df.iloc[-1]['MACD']:.2f}")
-            
-                    # --- Forecast, ML Edge, Seasonality, and Sentiment ---
-            st.divider()
-            st.subheader("🧠 Forecasts, ML Edge, Seasonality & Sentiment")
+            # 📰 Sentiment Color
+            if sentiment_score > 0.05:
+                senti_color = "green"
+            elif sentiment_score < -0.05:
+                senti_color = "red"
+            else:
+                senti_color = "gray"
 
-            try:
-                # ===================== 1️⃣ TinyToy Forecast =====================
-                from sklearn.linear_model import LinearRegression
-
-                lookback = 20
-                df_recent = df.tail(lookback).reset_index(drop=True)
-                df_recent["Index"] = np.arange(len(df_recent))
-
-                model = LinearRegression().fit(df_recent[["Index"]], df_recent["Close"])
-                predicted_price = float(model.predict([[len(df_recent)]])[0])
-                last_price = float(df_recent["Close"].iloc[-1])
-                forecast_change = predicted_price - last_price
-                forecast_pct = (forecast_change / last_price) * 100
-                direction = "⬆️ Up" if forecast_change > 0 else "⬇️ Down"
-
-                # ===================== 2️⃣ ML Edge =====================
-                ema_trend = (df_recent["EMA20"].iloc[-1] - df_recent["EMA50"].iloc[-1]) / df_recent["Close"].iloc[-1]
-                rsi_val = df_recent["RSI14"].iloc[-1]
-                rsi_edge = (50 - abs(50 - rsi_val)) / 50
-                atr_vol = df_recent["ATR14"].iloc[-1] / df_recent["Close"].iloc[-1]
-                ml_edge_score = max(0.0, min(1.0, (ema_trend * 5 + rsi_edge - atr_vol * 2)))
-
-                # ===================== 3️⃣ Seasonality =====================
-                df["Month"] = pd.to_datetime(df["Date"]).dt.month
-                monthly_returns = df.groupby("Month")["Close"].apply(lambda x: x.pct_change().mean() * 100)
-                this_month = pd.Timestamp.now().month
-                seasonality_avg = float(monthly_returns.get(this_month, 0.0))
-
-                # ===================== 4️⃣ Sentiment =====================
-                import requests
-                from textblob import TextBlob
-
-                sentiment_score = 0.0
-                try:
-                    api_key = os.getenv("TIINGO_API_KEY")
-                    news_url = f"https://api.tiingo.com/tiingo/news?tickers={symbol}&token={api_key}"
-                    r = requests.get(news_url, timeout=5)
-                    if r.ok:
-                        articles = r.json()[:5]
-                        sentiments = []
-                        for art in articles:
-                            title = art.get("title", "")
-                            polarity = TextBlob(title).sentiment.polarity
-                            sentiments.append(polarity)
-                        if sentiments:
-                            sentiment_score = np.mean(sentiments)
-                except Exception:
-                    pass
-
-                sentiment_label = (
-                    "😊 Positive" if sentiment_score > 0.05 else
-                    "😐 Neutral" if sentiment_score >= -0.05 else
-                    "😟 Negative"
+            with c1:
+                st.markdown(
+                    f"<div style='background-color:{forecast_color};padding:10px;border-radius:10px;color:white;text-align:center;'>"
+                    f"<b>TinyToy Forecast</b><br>{forecast_arrow} ${predicted_price:.2f}<br>"
+                    f"{forecast_pct:+.2f}%</div>",
+                    unsafe_allow_html=True
                 )
 
-                # ===================== 5️⃣ Visual Dashboard =====================
-                c1, c2, c3, c4 = st.columns(4)
+            with c2:
+                st.markdown(
+                    f"<div style='background-color:{edge_color};padding:10px;border-radius:10px;color:white;text-align:center;'>"
+                    f"<b>ML Edge</b><br>{ml_edge_score*100:.1f}%<br>{edge_label}</div>",
+                    unsafe_allow_html=True
+                )
 
-                # 🧭 Forecast Color
-                forecast_color = "green" if forecast_change > 0 else "red"
-                forecast_arrow = "⬆️" if forecast_change > 0 else "⬇️"
+            with c3:
+                st.markdown(
+                    f"<div style='background-color:{season_color};padding:10px;border-radius:10px;color:white;text-align:center;'>"
+                    f"<b>Seasonality</b><br>{seasonality_avg:+.2f}%</div>",
+                    unsafe_allow_html=True
+                )
 
-                # 🧠 ML Edge Color
-                if ml_edge_score >= 0.7:
-                    edge_color = "green"
-                    edge_label = "Strong Edge"
-                elif ml_edge_score >= 0.4:
-                    edge_color = "orange"
-                    edge_label = "Moderate Edge"
-                else:
-                    edge_color = "red"
-                    edge_label = "Weak Edge"
+            with c4:
+                st.markdown(
+                    f"<div style='background-color:{senti_color};padding:10px;border-radius:10px;color:white;text-align:center;'>"
+                    f"<b>Sentiment</b><br>{sentiment_label}</div>",
+                    unsafe_allow_html=True
+                )
 
-                # 🌤️ Seasonality Color
-                season_color = "green" if seasonality_avg > 0 else "red"
-
-                # 📰 Sentiment Color
-                if sentiment_score > 0.05:
-                    senti_color = "green"
-                elif sentiment_score < -0.05:
-                    senti_color = "red"
-                else:
-                    senti_color = "gray"
-
-                with c1:
-                    st.markdown(
-                        f"<div style='background-color:{forecast_color};padding:10px;border-radius:10px;color:white;text-align:center;'>"
-                        f"<b>TinyToy Forecast</b><br>{forecast_arrow} ${predicted_price:.2f}<br>"
-                        f"{forecast_pct:+.2f}%</div>",
-                        unsafe_allow_html=True
-                    )
-
-                with c2:
-                    st.markdown(
-                        f"<div style='background-color:{edge_color};padding:10px;border-radius:10px;color:white;text-align:center;'>"
-                        f"<b>ML Edge</b><br>{ml_edge_score*100:.1f}%<br>{edge_label}</div>",
-                        unsafe_allow_html=True
-                    )
-
-                with c3:
-                    st.markdown(
-                        f"<div style='background-color:{season_color};padding:10px;border-radius:10px;color:white;text-align:center;'>"
-                        f"<b>Seasonality</b><br>{seasonality_avg:+.2f}%</div>",
-                        unsafe_allow_html=True
-                    )
-
-                with c4:
-                    st.markdown(
-                        f"<div style='background-color:{senti_color};padding:10px;border-radius:10px;color:white;text-align:center;'>"
-                        f"<b>Sentiment</b><br>{sentiment_label}</div>",
-                        unsafe_allow_html=True
-                    )
-
-            except Exception as e:
-                st.warning(f"⚠️ Forecast/Edge/Seasonality/Sentiment failed: {e}")
+        except Exception as e:
+            st.warning(f"⚠️ Forecast/Edge/Seasonality/Sentiment failed: {e}")
 
 
             
@@ -250,16 +255,48 @@ def analyzer_ui(TIINGO_TOKEN):
     low = df["Low"]
     vol = df.get("Volume", pd.Series(index=df.index, dtype=float)).fillna(0)
 
-    # Use EMA10/20/50 for responsiveness (you already have EMA20/EMA50)
-    df["EMA10"] = df["Close"].ewm(span=10, adjust=False).mean()
+    # --- Ensure EMA10/20/50 columns exist ---
+    if "EMA10" not in df.columns:
+        df["EMA10"] = df["Close"].ewm(span=10, adjust=False).mean()
+    if "EMA20" not in df.columns:
+        df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
+    if "EMA50" not in df.columns:
+        df["EMA50"] = df["Close"].ewm(span=50, adjust=False).mean()
+
+    # now safely unpack
     ema10, ema20, ema50 = df["EMA10"], df["EMA20"], df["EMA50"]
 
-    # Indicators already computed earlier: RSI14, MACD, MACD_SIGNAL, ATR14
+
+   # --- Ensure required indicators exist before using them ---
+    if "RSI14" not in df.columns:
+        delta = df["Close"].diff()
+        gain = delta.where(delta > 0, 0.0)
+        loss = -delta.where(delta < 0, 0.0)
+        avg_gain = gain.rolling(window=14, min_periods=14).mean()
+        avg_loss = loss.rolling(window=14, min_periods=14).mean()
+        rs = avg_gain / avg_loss
+        df["RSI14"] = 100 - (100 / (1 + rs))
+
+    if "MACD" not in df.columns or "MACD_SIGNAL" not in df.columns:
+        short_ema = df["Close"].ewm(span=12, adjust=False).mean()
+        long_ema = df["Close"].ewm(span=26, adjust=False).mean()
+        df["MACD"] = short_ema - long_ema
+        df["MACD_SIGNAL"] = df["MACD"].ewm(span=9, adjust=False).mean()
+
+    if "ATR14" not in df.columns:
+        high_low = df["High"] - df["Low"]
+        high_close = (df["High"] - df["Close"].shift()).abs()
+        low_close = (df["Low"] - df["Close"].shift()).abs()
+        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        df["ATR14"] = tr.rolling(window=14, min_periods=1).mean()
+
+    # --- Indicators now guaranteed to exist ---
     rsi = df["RSI14"]
     macd = df["MACD"]
     macd_sig = df["MACD_SIGNAL"]
     atr14 = df["ATR14"]
-    last_close = float(close.iloc[-1])
+    last_close = float(df["Close"].iloc[-1])
+
 
     # --- Context windows ---
     RANGE_LOOKBACK = 20
@@ -280,20 +317,49 @@ def analyzer_ui(TIINGO_TOKEN):
         45 < float(rsi.iloc[-1]) < 55
     )
 
-    # --- Auto detection rules ---
+   # --- Smarter Auto-Detection Rules (v3: realistic trading behavior) ---
     detected = "Neutral"
-    if is_consolidation:
+
+    # ✅ Trend alignment with slight tolerance
+    trend_up = ema10.iloc[-1] > ema20.iloc[-1] * 0.99 and ema20.iloc[-1] > ema50.iloc[-1] * 0.98
+    trend_down = ema10.iloc[-1] < ema20.iloc[-1] * 1.01 and ema20.iloc[-1] < ema50.iloc[-1] * 1.02
+
+    # --- Consolidation ---
+    if range_pct < 3.5 and 40 < rsi.iloc[-1] < 60 and abs(macd.iloc[-1] - macd_sig.iloc[-1]) < 0.2:
         detected = "Wait (Consolidation)"
+
+    # --- Breakout ---
+    elif trend_up and (last_close >= recent_high * 0.97 or rsi.iloc[-1] > 65 or curr_vol >= avg_vol * 1.2):
+        detected = "Breakout"
+
+    # --- Pullback ---
+    elif trend_up and rsi.iloc[-1] < 55 and last_close <= ema20.iloc[-1] * 1.05:
+        detected = "Pullback"
+
+    # --- Breakdown ---
+    elif trend_down and last_close <= recent_low * 1.03:
+        detected = "Breakdown"
+
+    # --- Fallback ---
     else:
-        # Breakout: uptrend + closing above recent resistance with volume pop
-        if trend_up and last_close > recent_high * 1.01 and curr_vol > avg_vol * 1.3:
-            detected = "Breakout"
-        # Pullback: uptrend + rebound from support (RSI recovering, reclaiming EMA20)
-        elif trend_up and float(rsi.iloc[-1]) < 55 and last_close > float(ema20.iloc[-1]) * 0.99:
-            # Ensure it actually pulled back recently (yesterday below EMA20 or near recent_low)
-            if (close.shift(1).iloc[-1] < ema20.shift(1).iloc[-1]) or (last_close <= recent_low * 1.05):
-                detected = "Pullback"
-        # If neither matched, keep Neutral (falls back below)
+        detected = "Neutral"
+
+    
+    # --- Optional debug printout ---
+    # st.write({
+    #     "trend_up": trend_up,
+    #     "trend_down": trend_down,
+    #     "last_close": last_close,
+    #     "recent_high": recent_high,
+    #     "recent_low": recent_low,
+    #     "ema10": ema10.iloc[-1],
+    #     "ema20": ema20.iloc[-1],
+    #     "ema50": ema50.iloc[-1],
+    #     "rsi": rsi.iloc[-1],
+    #     "curr_vol": curr_vol,
+    #     "avg_vol": avg_vol
+    # })
+
 
     # Apply manual override if not Auto
     setup_choice = detected if mode == "Auto" else mode
