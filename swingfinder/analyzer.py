@@ -5,6 +5,8 @@ import plotly.graph_objects as go
 from utils.tiingo_api import tiingo_history
 from utils.indicators import compute_indicators
 from utils.storage import load_json, save_json
+from utils.tiingo_api import get_next_earnings_date
+
 
 
 # ---------------- Analyzer UI ----------------
@@ -105,6 +107,15 @@ def analyzer_ui(TIINGO_TOKEN):
         st.metric("ATR(14)", f"{df.iloc[-1]['ATR14']:.2f}")
         st.metric("RSI(14)", f"{df.iloc[-1]['RSI14']:.1f}")
         st.metric("MACD", f"{df.iloc[-1]['MACD']:.2f}")
+        
+        # --- Next Earnings Date ---
+        earnings_date = get_next_earnings_date(symbol, TIINGO_TOKEN)
+        if earnings_date and earnings_date != "N/A":
+            earnings_date = earnings_date.split("T")[0]
+            st.metric("Next Earnings", earnings_date)
+        else:
+            st.metric("Next Earnings", "Not Scheduled")
+
 
         # --- Forecast, ML Edge, Seasonality, and Sentiment ---
         st.divider()
@@ -123,7 +134,7 @@ def analyzer_ui(TIINGO_TOKEN):
             last_price = float(df_recent["Close"].iloc[-1])
             forecast_change = predicted_price - last_price
             forecast_pct = (forecast_change / last_price) * 100
-            direction = "⬆️ Up" if forecast_change > 0 else "⬇️ Down"
+            direction = "⬆️ Up" if forecast_change > 0 else "⬇️ Down"   
 
             # ===================== 2️⃣ ML Edge =====================
             ema_trend = (df_recent["EMA20"].iloc[-1] - df_recent["EMA50"].iloc[-1]) / df_recent["Close"].iloc[-1]
@@ -138,33 +149,51 @@ def analyzer_ui(TIINGO_TOKEN):
             this_month = pd.Timestamp.now().month
             seasonality_avg = float(monthly_returns.get(this_month, 0.0))
 
-            # ===================== 4️⃣ Sentiment =====================
-            import os
+            # --- Sentiment Section ---
+            # --- Sentiment Data Fetch ---
             import requests
             from textblob import TextBlob
 
+            articles = []
             sentiment_score = 0.0
+            sentiment_label = "😐 Neutral"
+
             try:
-                api_key = os.getenv("TIINGO_API_KEY")
-                news_url = f"https://api.tiingo.com/tiingo/news?tickers={symbol}&token={api_key}"
+                news_url = f"https://api.tiingo.com/tiingo/news?tickers={symbol}&token={TIINGO_TOKEN}"
                 r = requests.get(news_url, timeout=5)
                 if r.ok:
-                    articles = r.json()[:5]
-                    sentiments = []
-                    for art in articles:
-                        title = art.get("title", "")
-                        polarity = TextBlob(title).sentiment.polarity
-                        sentiments.append(polarity)
-                    if sentiments:
-                        sentiment_score = np.mean(sentiments)
-            except Exception:
-                pass
+                    articles = r.json()[:5]  # Limit to 5 most recent
+                    scores = [TextBlob(a.get("title", "")).sentiment.polarity for a in articles if a.get("title")]
+                    if scores:
+                        sentiment_score = sum(scores) / len(scores)
+                        if sentiment_score > 0.05:
+                            sentiment_label = "😊 Positive"
+                        elif sentiment_score < -0.05:
+                            sentiment_label = "😟 Negative"
+            except Exception as e:
+                st.warning(f"⚠️ News sentiment fetch failed: {e}")
 
-            sentiment_label = (
-                "😊 Positive" if sentiment_score > 0.05 else
-                "😐 Neutral" if sentiment_score >= -0.05 else
-                "😟 Negative"
-            )
+            st.subheader("📰 Sentiment Analysis")
+
+            # Display metric as a "clickable" button-style toggle
+            clicked = st.button(f"📰 Sentiment: {sentiment_label} ({sentiment_score:.2f})", key="sentiment_toggle")
+
+            # Remember toggle state
+            if clicked:
+                st.session_state["show_sentiment_news"] = not st.session_state.get("show_sentiment_news", False)
+
+            # Show the article list if toggle is active
+            if st.session_state.get("show_sentiment_news", False):
+                st.markdown("### 🗞️ Recent News Articles")
+                if articles:
+                    for art in articles:
+                        title = art.get("title", "No title")
+                        url = art.get("url", "")
+                        date = art.get("publishedDate", "")[:10]
+                        polarity = TextBlob(title).sentiment.polarity
+                        st.markdown(f"**{date}** — [{title}]({url})  \n🔹 *Sentiment score:* `{polarity:.2f}`")
+                else:
+                    st.info("No recent articles available for this ticker.")
 
             # ===================== 5️⃣ Visual Dashboard =====================
             c1, c2, c3, c4 = st.columns(4)
