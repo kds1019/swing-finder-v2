@@ -229,3 +229,24 @@ def fetch_tiingo_intraday(symbol: str, token: str,
     except Exception:
         return pd.DataFrame()
 
+import requests
+import streamlit as st
+
+@st.cache_data(ttl=86400)
+def get_next_earnings_date(symbol: str, token: str) -> str:
+    """
+    Fetch next earnings date from Tiingo metadata.
+    Returns 'YYYY-MM-DD' or 'N/A' if unavailable.
+    """
+    url = f"https://api.tiingo.com/tiingo/daily/{symbol.lower()}"
+    headers = {"Authorization": f"Token {token}"}
+    try:
+        r = requests.get(url, headers=headers, timeout=5)
+        if not r.ok:
+            print(f"⚠️ Earnings fetch failed for {symbol}: {r.status_code}")
+            return "N/A"
+        data = r.json()
+        return data.get("nextEarningsDate", "N/A")
+    except Exception as e:
+        print(f"⚠️ Earnings error for {symbol}: {e}")
+        return "N/A"
