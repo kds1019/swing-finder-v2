@@ -1,0 +1,1396 @@
+{
+  "meta": {
+    "last_updated": "2025-11-08 21:55",
+    "count": 275,
+    "sources": [
+      "S&P 500",
+      "NASDAQ 100",
+      "Popular Liquid Stocks"
+    ],
+    "filters": {
+      "description": "High-quality swing trading stocks",
+      "price_range": [
+        10.0,
+        60.0
+      ],
+      "min_avg_volume": 1000000
+    }
+  },
+  "tickers": [
+    {
+      "ticker": "AA",
+      "name": "Alcoa Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "AAPL",
+      "name": "Apple Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "ABBV",
+      "name": "Abbvie Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "ABNB",
+      "name": "Airbnb Inc - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "ABT",
+      "name": "Abbott Laboratories",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "ACN",
+      "name": "Accenture plc - Class A",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "ADBE",
+      "name": "Adobe Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "ADI",
+      "name": "Analog Devices Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "ADP",
+      "name": "Automatic Data Processing Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "ADSK",
+      "name": "Autodesk Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "AEP",
+      "name": "American Electric Power Company Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "AIG",
+      "name": "American International Group Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "AMAT",
+      "name": "Applied Materials Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "AMD",
+      "name": "Advanced Micro Devices Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "AMGN",
+      "name": "AMGEN Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "AMT",
+      "name": "American Tower Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "AMZN",
+      "name": "Amazon.com Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "ANSS",
+      "name": "Ansys Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "AON",
+      "name": "Aon plc. - Class A",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "APA",
+      "name": "APA Corporation",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "APD",
+      "name": "Air Products & Chemicals Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "ARM",
+      "name": "Arm Holdings plc.",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "ASML",
+      "name": "ASML Holding NV",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "ATVI",
+      "name": "Activision Blizzard Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "AVGO",
+      "name": "Broadcom Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "AXP",
+      "name": "American Express Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "AZN",
+      "name": "Astrazeneca plc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "BA",
+      "name": "Boeing Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "BAC",
+      "name": "Bank Of America Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "BIIB",
+      "name": "Biogen Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "BKNG",
+      "name": "Booking Holdings Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "BKR",
+      "name": "Baker Hughes Co - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "BLK",
+      "name": "BlackRock Finance Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "BMY",
+      "name": "Bristol-Myers Squibb Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "C",
+      "name": "Citigroup Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CAG",
+      "name": "Conagra Brands Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CAT",
+      "name": "Caterpillar Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CB",
+      "name": "Chubb Ltd",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CCEP",
+      "name": "Coca-Cola Europacific Partners Plc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "CCI",
+      "name": "Crown Castle Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CDNS",
+      "name": "Cadence Design Systems Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "CDW",
+      "name": "CDW Corp",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "CHD",
+      "name": "Church & Dwight Co. Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CHTR",
+      "name": "Charter Communications Inc - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "CHWY",
+      "name": "Chewy Inc - Class A",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CI",
+      "name": "Cigna Group (The)",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CL",
+      "name": "Colgate-Palmolive Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CLF",
+      "name": "Cleveland-Cliffs Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CLX",
+      "name": "Clorox Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CMCSA",
+      "name": "Comcast Corp - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "CMG",
+      "name": "Chipotle Mexican Grill",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "COF",
+      "name": "Capital One Financial Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "COIN",
+      "name": "Coinbase Global Inc - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "COP",
+      "name": "Conoco Phillips",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "COST",
+      "name": "Costco Wholesale Corp",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "CPB",
+      "name": "Campbell Soup Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CPRT",
+      "name": "Copart Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "CRM",
+      "name": "Salesforce Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CRWD",
+      "name": "Crowdstrike Holdings Inc - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "CSCO",
+      "name": "Cisco Systems Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "CSGP",
+      "name": "Costar Group Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "CSX",
+      "name": "CSX Corp",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "CTAS",
+      "name": "Cintas Corporation",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "CTSH",
+      "name": "Cognizant Technology Solutions Corp - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "CVNA",
+      "name": "Carvana Co. - Class A",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CVS",
+      "name": "CVS Health Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CVX",
+      "name": "Chevron Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "D",
+      "name": "Dominion Energy Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "DASH",
+      "name": "DoorDash Inc - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "DD",
+      "name": "DuPont de Nemours Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "DDOG",
+      "name": "Datadog Inc - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "DE",
+      "name": "Deere & Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "DG",
+      "name": "Dollar General Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "DHR",
+      "name": "Danaher Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "DIS",
+      "name": "Walt Disney Co (The)",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "DKNG",
+      "name": "DraftKings Inc - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "DLR",
+      "name": "Digital Realty Trust Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "DLTR",
+      "name": "Dollar Tree Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "DOCU",
+      "name": "DocuSign Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "DOW",
+      "name": "Dow Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "DPZ",
+      "name": "Dominos Pizza Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "DUK",
+      "name": "Duke Energy Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "DVN",
+      "name": "Devon Energy Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "DXCM",
+      "name": "Dexcom Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "EA",
+      "name": "Electronic Arts Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "ECL",
+      "name": "Ecolab Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "ED",
+      "name": "Consolidated Edison Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "ELV",
+      "name": "Elevance Health Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "EMR",
+      "name": "Emerson Electric Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "EOG",
+      "name": "EOG Resources Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "EQIX",
+      "name": "Equinix Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "ETN",
+      "name": "Eaton Corporation plc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "ETSY",
+      "name": "Etsy Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "EXC",
+      "name": "Exelon Corp",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "EXPE",
+      "name": "Expedia Group Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "F",
+      "name": "Ford Motor Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "FANG",
+      "name": "Diamondback Energy Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "FAST",
+      "name": "Fastenal Company",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "FCX",
+      "name": "Freeport-McMoRan Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "FDX",
+      "name": "Fedex Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "FOX",
+      "name": "Fox Corporation - Class B",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "FOXA",
+      "name": "Fox Corporation - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "FTNT",
+      "name": "Fortinet Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "GD",
+      "name": "General Dynamics Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "GE",
+      "name": "General Electric Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "GEHC",
+      "name": "GE HealthCare Technologies Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "GFS",
+      "name": "GlobalFoundries Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "GILD",
+      "name": "Gilead Sciences Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "GIS",
+      "name": "General Mills Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "GM",
+      "name": "General Motors Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "GOLD",
+      "name": "Randgold Resources Ltd",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "GOOG",
+      "name": "Alphabet Inc - Class C",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "GOOGL",
+      "name": "Alphabet Inc - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "GS",
+      "name": "Goldman Sachs Group Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "HAL",
+      "name": "Halliburton Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "HD",
+      "name": "Home Depot Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "HES",
+      "name": "Hess Corporation",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "HLT",
+      "name": "Hilton Worldwide Holdings Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "HON",
+      "name": "Honeywell International Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "HOOD",
+      "name": "Robinhood Markets Inc - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "HSY",
+      "name": "Hershey Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "HUM",
+      "name": "Humana Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "IBM",
+      "name": "International Business Machines Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "IDXX",
+      "name": "Idexx Laboratories Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "ILMN",
+      "name": "Illumina Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "INTC",
+      "name": "Intel Corp",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "INTU",
+      "name": "Intuit Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "IPG",
+      "name": "Interpublic Group Of Cos. Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "ISRG",
+      "name": "Intuitive Surgical Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "ITW",
+      "name": "Illinois Tool Works Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "JNJ",
+      "name": "Johnson & Johnson",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "JPM",
+      "name": "JPMorgan Chase & Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "K",
+      "name": "Kellanova Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "KDP",
+      "name": "Keurig Dr Pepper Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "KHC",
+      "name": "Kraft Heinz Company",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "KLAC",
+      "name": "KLA Corp",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "KMB",
+      "name": "Kimberly-Clark Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "KMI",
+      "name": "Kinder Morgan Inc - Class P",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "KO",
+      "name": "Coca-Cola Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "LCID",
+      "name": "Lucid Group Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "LI",
+      "name": "Li Auto Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "LIN",
+      "name": "Linde Plc.",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "LLY",
+      "name": "Lilly(Eli) & Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "LMT",
+      "name": "Lockheed Martin Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "LNG",
+      "name": "Cheniere Energy Inc",
+      "exchange": "NYSE MKT"
+    },
+    {
+      "ticker": "LOW",
+      "name": "Lowe`s Cos. Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "LRCX",
+      "name": "Lam Research Corp",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "LULU",
+      "name": "Lululemon Athletica Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "LYFT",
+      "name": "Lyft Inc Cls A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "MA",
+      "name": "Mastercard Incorporated - Class A",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "MAR",
+      "name": "Marriott International Inc - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "MCD",
+      "name": "McDonald`s Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "MCHP",
+      "name": "Microchip Technology Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "MDB",
+      "name": "MongoDB Inc - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "MDLZ",
+      "name": "Mondelez International Inc - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "MELI",
+      "name": "MercadoLibre Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "MET",
+      "name": "Metlife Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "MMC",
+      "name": "Marsh & McLennan Cos. Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "MMM",
+      "name": "3M Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "MNST",
+      "name": "Monster Beverage Corp",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "MO",
+      "name": "Altria Group Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "MPC",
+      "name": "Marathon Petroleum Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "MRK",
+      "name": "Merck & Co Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "MRNA",
+      "name": "Moderna Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "MRO",
+      "name": "Marathon Oil Corporation",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "MRVL",
+      "name": "Marvell Technology Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "MS",
+      "name": "Morgan Stanley",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "MSFT",
+      "name": "Microsoft Corporation",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "MTCH",
+      "name": "Match Group Inc - New",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "MU",
+      "name": "Micron Technology Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "NEE",
+      "name": "NextEra Energy Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "NEM",
+      "name": "Newmont Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "NET",
+      "name": "Cloudflare Inc - Class A",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "NFLX",
+      "name": "Netflix Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "NIO",
+      "name": "NIO Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "NKE",
+      "name": "Nike Inc - Class B",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "NOC",
+      "name": "Northrop Grumman Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "NOW",
+      "name": "ServiceNow Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "NSC",
+      "name": "Norfolk Southern Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "NUE",
+      "name": "Nucor Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "NVDA",
+      "name": "NVIDIA Corp",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "NWS",
+      "name": "News Corp - Class B",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "NWSA",
+      "name": "News Corp - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "NXPI",
+      "name": "NXP Semiconductors NV",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "O",
+      "name": "Realty Income Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "ODFL",
+      "name": "Old Dominion Freight Line Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "OKE",
+      "name": "Oneok Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "OMC",
+      "name": "Omnicom Group Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "ON",
+      "name": "ON Semiconductor Corp",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "ORCL",
+      "name": "Oracle Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "ORLY",
+      "name": "O`Reilly Automotive Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "OXY",
+      "name": "Occidental Petroleum Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PANW",
+      "name": "Palo Alto Networks Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "PARA",
+      "name": "PREMARA FINANCIAL",
+      "exchange": "OTCBB"
+    },
+    {
+      "ticker": "PAYX",
+      "name": "Paychex Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "PCAR",
+      "name": "Paccar Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "PEG",
+      "name": "Public Service Enterprise Group Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PEP",
+      "name": "PepsiCo Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "PFE",
+      "name": "Pfizer Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PG",
+      "name": "Procter & Gamble Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PGR",
+      "name": "Progressive Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PH",
+      "name": "Parker-Hannifin Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PINS",
+      "name": "Pinterest Inc - Class A",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PLD",
+      "name": "Prologis Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PLTR",
+      "name": "Palantir Technologies Inc - Class A",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PM",
+      "name": "Philip Morris International Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PNC",
+      "name": "PNC Financial Services Group Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PPG",
+      "name": "PPG Industries Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PSA",
+      "name": "Public Storage.",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PSX",
+      "name": "Phillips 66",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PYPL",
+      "name": "PayPal Holdings Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "QCOM",
+      "name": "Qualcomm Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "RBLX",
+      "name": "Roblox Corporation - Class A",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "REGN",
+      "name": "Regeneron Pharmaceuticals Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "RIVN",
+      "name": "Rivian Automotive Inc - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "ROST",
+      "name": "Ross Stores Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "RTX",
+      "name": "RTX Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SBUX",
+      "name": "Starbucks Corp",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "SCHW",
+      "name": "Charles Schwab Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SHOP",
+      "name": "Shopify Inc - Class A",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SHW",
+      "name": "Sherwin-Williams Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SJM",
+      "name": "J.M. Smucker Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SLB",
+      "name": "SLB",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SMCI",
+      "name": "Super Micro Computer Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "SNAP",
+      "name": "Snap Inc - Class A",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SNOW",
+      "name": "Snowflake Inc - Class A",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SNPS",
+      "name": "Synopsys Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "SO",
+      "name": "Southern Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SOFI",
+      "name": "SoFi Technologies Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "SPG",
+      "name": "Simon Property Group Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SPGI",
+      "name": "S&P Global Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SPOT",
+      "name": "Spotify Technology S.A.",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SQ",
+      "name": null,
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SRE",
+      "name": "Sempra",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "T",
+      "name": "AT&T Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "TEAM",
+      "name": "Atlassian Corporation - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "TFC",
+      "name": "Truist Financial Corporation",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "TGT",
+      "name": "Target Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "TJX",
+      "name": "TJX Companies Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "TMO",
+      "name": "Thermo Fisher Scientific Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "TMUS",
+      "name": "T-Mobile US Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "TSLA",
+      "name": "Tesla Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "TSN",
+      "name": "Tyson Foods Inc - Class A",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "TTWO",
+      "name": "Take-Two Interactive Software Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "TWLO",
+      "name": "Twilio Inc Class A",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "TXN",
+      "name": "Texas Instruments Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "UBER",
+      "name": "Uber Technologies Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "ULTA",
+      "name": "Ulta Beauty Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "UNH",
+      "name": "Unitedhealth Group Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "UNP",
+      "name": "Union Pacific Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "UPS",
+      "name": "United Parcel Service Inc - Class B",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "UPST",
+      "name": "Upstart Holdings Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "USB",
+      "name": "U.S. Bancorp.",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "V",
+      "name": "Visa Inc - Class A",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "VICI",
+      "name": "VICI Properties Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "VLO",
+      "name": "Valero Energy Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "VRSK",
+      "name": "Verisk Analytics Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "VRTX",
+      "name": "Vertex Pharmaceuticals Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "VZ",
+      "name": "Verizon Communications Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "W",
+      "name": "Wayfair Inc - Class A",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "WBA",
+      "name": "Walgreens Boots Alliance Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "WBD",
+      "name": "Warner Bros. Discovery Inc - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "WDAY",
+      "name": "Workday Inc - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "WELL",
+      "name": "Welltower Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "WFC",
+      "name": "Wells Fargo & Company",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "WM",
+      "name": "Waste Management Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "WMB",
+      "name": "Williams Cos Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "WMT",
+      "name": "Walmart Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "X",
+      "name": "United States Steel Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "XEL",
+      "name": "Xcel Energy Inc",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "XOM",
+      "name": "Exxon Mobil Corp",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "XPEV",
+      "name": "XPeng Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "YUM",
+      "name": "Yum Brands Inc",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "ZM",
+      "name": "Zoom Video Communications Inc - Class A",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "ZS",
+      "name": "Zscaler Inc",
+      "exchange": "NASDAQ"
+    }
+  ]
+}
