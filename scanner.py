@@ -321,7 +321,6 @@ def scanner_ui(TIINGO_TOKEN):
             # --- Fetch & compute indicators ---
             df = tiingo_history(ticker, TIINGO_TOKEN, SCAN_LOOKBACK_DAYS)
             if df is None or df.empty:
-                # st.write(f"⚠️ No Tiingo data for {ticker}")  # Commented out for speed
                 return None
 
             if df is None or len(df) < 60:
@@ -336,6 +335,7 @@ def scanner_ui(TIINGO_TOKEN):
 
             px = float(last["Close"])
             vol = float(last["Volume"])
+
             if pd.isna(px) or pd.isna(vol) or px < price_min or px > price_max or vol < min_volume:
                 return None
 
@@ -438,45 +438,16 @@ def scanner_ui(TIINGO_TOKEN):
                 smart_score -= 10
 
             # If Smart Mode is active and favored sectors exist
-            if st.session_state.get("smart_mode", False):
-                favored = st.session_state.get("favored_sectors", [])
-                ticker_sector = get_tiingo_sector(ticker, TIINGO_TOKEN)
-                if any(s.lower() in ticker_sector.lower() for s in favored):
-                    smart_score += 10  # aligned with favored sector
-                else:
-                    smart_score -= 5   # not in favored trend
+            # NOTE: Sector fetching moved to post-scan to avoid rate limiting
+            # if st.session_state.get("smart_mode", False):
+            #     favored = st.session_state.get("favored_sectors", [])
+            #     ticker_sector = get_tiingo_sector(ticker, TIINGO_TOKEN)
+            #     if any(s.lower() in ticker_sector.lower() for s in favored):
+            #         smart_score += 10  # aligned with favored sector
+            #     else:
+            #         smart_score -= 5   # not in favored trend
 
             smart_score = int(np.clip(smart_score, 0, 100))
-            
-                    # --- SmartScore Calculation (sector + market bias aware) ---
-            smart_score = 50  # start neutral
-
-            # Base on setup type
-            if setup == "Breakout":
-                smart_score += (rsi - 50) * 0.8 + (band - 0.5) * 40
-            elif setup == "Pullback":
-                smart_score += (60 - rsi) * 0.8 + (0.5 - band) * 40
-            elif near_miss:
-                smart_score += 5  # slight bump if it's a near setup
-
-            # Sector alignment bonus (Smart Mode only)
-            if st.session_state.get("smart_mode", False) and "smart_context" in st.session_state:
-                try:
-                    smart_df = st.session_state["smart_context"]["sectors_df"]
-                    sector = get_tiingo_sector(ticker, TIINGO_TOKEN)
-                    bias = smart_df.loc[smart_df["Sector"] == sector, "Bias"].values[0] if sector in smart_df["Sector"].values else "Neutral"
-
-                    if bias == "Uptrend" and setup == "Breakout":
-                        smart_score += 15
-                    elif bias == "Downtrend" and setup == "Pullback":
-                        smart_score += 15
-                    elif bias == "Sideways":
-                        smart_score -= 5
-                except Exception as e:
-                    st.write(f"⚠️ SmartScore sector bias error: {e}")
-
-            # Clamp SmartScore to 0–100 range
-            smart_score = max(0, min(100, round(smart_score, 1)))
 
             # --- Volume Analysis ---
             vol_analysis = analyze_volume(df, lookback=20)
@@ -526,33 +497,35 @@ def scanner_ui(TIINGO_TOKEN):
                 smart_score = max(0, min(100, round(smart_score, 1)))
 
             # --- Get earnings date and sector ---
+            # DISABLED during scan to avoid rate limiting - will fetch on-demand when displaying results
             earnings_date = None
             days_to_earnings = None
             earnings_warning = None
-            try:
-                earnings_date = get_next_earnings_date(ticker, TIINGO_TOKEN)
-                if earnings_date and earnings_date not in ["N/A", "Not Scheduled", None]:
-                    import pandas as pd
-                    days_to_earnings = (pd.to_datetime(earnings_date) - pd.Timestamp.now()).days
-                    if days_to_earnings <= 2:
-                        earnings_warning = "🔴 Earnings in 0-2 days"
-                    elif days_to_earnings <= 7:
-                        earnings_warning = "🟡 Earnings in 3-7 days"
-                    elif days_to_earnings <= 30:
-                        earnings_warning = "🟢 Earnings in 8-30 days"
-            except Exception as e:
-                # Silently fail - earnings data is optional
-                pass
+            # try:
+            #     earnings_date = get_next_earnings_date(ticker, TIINGO_TOKEN)
+            #     if earnings_date and earnings_date not in ["N/A", "Not Scheduled", None]:
+            #         import pandas as pd
+            #         days_to_earnings = (pd.to_datetime(earnings_date) - pd.Timestamp.now()).days
+            #         if days_to_earnings <= 2:
+            #             earnings_warning = "🔴 Earnings in 0-2 days"
+            #         elif days_to_earnings <= 7:
+            #             earnings_warning = "🟡 Earnings in 3-7 days"
+            #         elif days_to_earnings <= 30:
+            #             earnings_warning = "🟢 Earnings in 8-30 days"
+            # except Exception as e:
+            #     # Silently fail - earnings data is optional
+            #     pass
 
-            # Get sector
+            # Get sector - DISABLED during scan to avoid rate limiting
+            # Sector will be fetched on-demand when displaying results
             sector = "Unknown"
-            try:
-                sector = get_tiingo_sector(ticker, TIINGO_TOKEN)
-                if not sector or sector == "":
-                    sector = "Unknown"
-            except Exception as e:
-                # Silently fail - sector data is optional
-                pass
+            # try:
+            #     sector = get_tiingo_sector(ticker, TIINGO_TOKEN)
+            #     if not sector or sector == "":
+            #         sector = "Unknown"
+            # except Exception as e:
+            #     # Silently fail - sector data is optional
+            #     pass
 
             # --- Build result card ---
             # Note: Fundamental scores are fetched on-demand after scan to keep scans fast
@@ -609,7 +582,14 @@ def scanner_ui(TIINGO_TOKEN):
     # ---------------- Scanner (full universe, concurrent) ----------------
     def run_full_scan(mode: str, price_min: float, price_max: float, min_volume: float,
                     max_cards: int) -> list[dict]:
+        st.write(f"🚀 **Starting scan with:** mode={mode}, price=${price_min}-${price_max}, min_vol={min_volume:,.0f}, max_cards={max_cards}")
+
         tickers = load_verified_universe(TIINGO_TOKEN)
+
+        st.write(f"✅ **Loaded {len(tickers)} tickers from universe**")
+        if not tickers:
+            st.error("❌ No tickers loaded! Check your universe file or Tiingo API.")
+            return []
 
         # Shuffle to diversify early results & keep UI feeling live
         random.seed()
@@ -641,6 +621,9 @@ def scanner_ui(TIINGO_TOKEN):
 
         progress.empty()
 
+        # --- DEBUG: Show what we found ---
+        st.write(f"🔍 **Scan Complete:** Scanned {scanned} tickers, found {len(results)} total results")
+
         # --- Sort by SmartScore (comprehensive ranking) ---
         # SmartScore already considers: RSI, BandPos, EMA trend, sector alignment, Fibonacci zone
         # Higher SmartScore = better setup, so we negate for descending sort
@@ -654,7 +637,13 @@ def scanner_ui(TIINGO_TOKEN):
         st.session_state["scanner_results_near"] = near_misses
         st.session_state["scanner_results"] = confirmed + near_misses   # ✅ add this line!
 
-        st.write(f"🧪 Debug: {len(confirmed)} confirmed | {len(near_misses)} near misses collected")
+        st.write(f"🧪 **Debug:** {len(confirmed)} confirmed setups | {len(near_misses)} near misses")
+
+        # Show first few results for debugging
+        if results:
+            st.write(f"📊 **Sample Results (first 3):**")
+            for r in results[:3]:
+                st.write(f"  - {r.get('Symbol')}: Setup={r.get('Setup')}, RSI={r.get('RSI14')}, Band={r.get('BandPos20')}, SmartScore={r.get('SmartScore')}")
 
         # --- remove duplicate symbols ---
         unique_results = []
@@ -900,6 +889,9 @@ def scanner_ui(TIINGO_TOKEN):
     st.header("📊 Webull-Style Market Scanner — U.S. (Tiingo)")
     st.caption("All active U.S. equities. Filters: price, volume, and setup mode (Pullback/Breakout/Both). Cards show your Trade Plan target & stop.")
 
+    # DEBUG: Check if button was clicked
+    st.write(f"🔍 DEBUG: run_scan button state = {run_scan}")
+
     if run_scan:
         st.session_state["scanner_running"] = True
         with st.spinner("Scanning the U.S. market... this may take 1–2 minutes"):
@@ -1056,30 +1048,44 @@ def scanner_ui(TIINGO_TOKEN):
                                 else:
                                     sector_badge = f"📊 {rec['Sector']}"
 
-                            st.markdown(
-                                f"""
-                                <div style="border:2px solid {'#22c55e' if rec['Setup']=='Breakout' else '#3b82f6'};border-radius:14px;padding:10px;">
-                                    <div style="display:flex;justify-content:space-between;align-items:baseline;">
-                                        <div style="font-weight:700;font-size:1.15rem">{rec['Symbol']}</div>
-                                        <div style="font-weight:600">${rec['Price']:.2f}</div>
-                                    </div>
-                                    <span style="font-size:0.85rem;color:#facc15;">⭐ Smart: {rec.get('SmartScore', '—')}</span>
-                                    {f"<br/><span style='font-size:0.85rem;color:{'#10b981' if rec['FibZone']=='discount' else '#f59e0b'};'>{fib_badge}</span>" if fib_badge else ""}
-                                    {f"<br/><span style='font-size:0.85rem;'>{sector_badge}</span>" if sector_badge else ""}
-                                    {f"<br/><span style='font-size:0.85rem;'>{earnings_badge}</span>" if earnings_badge else ""}
-                                    <div style="font-size:0.9rem;opacity:0.9;margin-top:4px;">
-                                        Setup: <b>{rec['Setup']}</b> &nbsp;|&nbsp; RSI14: <b>{rec['RSI14']}</b> &nbsp;|&nbsp; Vol: <b>{rec['Volume']:,}</b><br/>
-                                        EMA20&gt;EMA50: <b>{'✅' if rec['EMA20>EMA50'] else '❌'}</b> &nbsp;|&nbsp; BandPos20: <b>{rec['BandPos20']}</b> &nbsp;|&nbsp; ATR14: <b>{rec['ATR14']}</b>
-                                    </div>
-                                    <div style="margin-top:6px;font-size:0.95rem;line-height:1.4;">
-                                        🛡️ Stop: <b>${rec['Stop']:.2f}</b><br/>
-                                        🎯 <b style="color:#16a34a;">Target: ${rec['Target']:.2f}</b>
-                                    </div>
-                                    {f"<div style='margin-top:4px;font-size:0.85rem;opacity:0.85;color:#22c55e;'>{favored_badge}</div>" if favored_badge else ""}
+                            # Build the card HTML
+                            fib_color = '#10b981' if rec.get('FibZone') == 'discount' else '#f59e0b'
+                            border_color = '#22c55e' if rec['Setup'] == 'Breakout' else '#3b82f6'
+                            ema_check = '✅' if rec['EMA20>EMA50'] else '❌'
+
+                            card_html = f"""
+                            <div style="border:2px solid {border_color};border-radius:14px;padding:10px;">
+                                <div style="display:flex;justify-content:space-between;align-items:baseline;">
+                                    <div style="font-weight:700;font-size:1.15rem">{rec['Symbol']}</div>
+                                    <div style="font-weight:600">${rec['Price']:.2f}</div>
                                 </div>
-                                """,
-                                unsafe_allow_html=True
-                            )
+                                <span style="font-size:0.85rem;color:#facc15;">⭐ Smart: {rec.get('SmartScore', '—')}</span>
+                            """
+
+                            if fib_badge:
+                                card_html += f"<br/><span style='font-size:0.85rem;color:{fib_color};'>{fib_badge}</span>"
+                            if sector_badge:
+                                card_html += f"<br/><span style='font-size:0.85rem;'>{sector_badge}</span>"
+                            if earnings_badge:
+                                card_html += f"<br/><span style='font-size:0.85rem;'>{earnings_badge}</span>"
+
+                            card_html += f"""
+                                <div style="font-size:0.9rem;opacity:0.9;margin-top:4px;">
+                                    Setup: <b>{rec['Setup']}</b> &nbsp;|&nbsp; RSI14: <b>{rec['RSI14']}</b> &nbsp;|&nbsp; Vol: <b>{rec['Volume']:,}</b><br/>
+                                    EMA20&gt;EMA50: <b>{ema_check}</b> &nbsp;|&nbsp; BandPos20: <b>{rec['BandPos20']}</b> &nbsp;|&nbsp; ATR14: <b>{rec['ATR14']}</b>
+                                </div>
+                                <div style="margin-top:6px;font-size:0.95rem;line-height:1.4;">
+                                    🛡️ Stop: <b>${rec['Stop']:.2f}</b><br/>
+                                    🎯 <b style="color:#16a34a;">Target: ${rec['Target']:.2f}</b>
+                                </div>
+                            """
+
+                            if favored_badge:
+                                card_html += f"<div style='margin-top:4px;font-size:0.85rem;opacity:0.85;color:#22c55e;'>{favored_badge}</div>"
+
+                            card_html += "</div>"
+
+                            st.markdown(card_html, unsafe_allow_html=True)
 
                             st.markdown(
                                 f"🧭 Context: <b>{rec.get('SetupContext', 'N/A')}</b>",
@@ -1150,30 +1156,42 @@ def scanner_ui(TIINGO_TOKEN):
                                 else:
                                     sector_badge = f"📊 {rec['Sector']}"
 
-                            st.markdown(
-                                f"""
-                                <div style="border:2px dashed #facc15;border-radius:14px;padding:10px;">
-                                    <div style="display:flex;justify-content:space-between;align-items:baseline;">
-                                        <div style="font-weight:700;font-size:1.15rem">{rec['Symbol']}</div>
-                                        <div style="font-weight:600">${rec['Price']:.2f}</div>
-                                    </div>
-                                    <span style="font-size:0.85rem;color:#facc15;">⭐ Smart: {rec.get('SmartScore', '—')}</span>
-                                    {f"<br/><span style='font-size:0.85rem;color:{'#10b981' if rec['FibZone']=='discount' else '#f59e0b'};'>{fib_badge}</span>" if fib_badge else ""}
-                                    {f"<br/><span style='font-size:0.85rem;'>{sector_badge}</span>" if sector_badge else ""}
-                                    {f"<br/><span style='font-size:0.85rem;'>{earnings_badge}</span>" if earnings_badge else ""}
-                                    <div style="font-size:0.9rem;opacity:0.9;margin-top:4px;">
-                                        🟡 Potential <b>{rec['NearMiss']}</b> setup forming<br/>
-                                        RSI14: <b>{rec['RSI14']}</b> | BandPos20: <b>{rec['BandPos20']}</b>
-                                    </div>
-                                    <div style="margin-top:6px;font-size:0.95rem;line-height:1.4;">
-                                        🛡️ Stop: <b>${rec['Stop']:.2f}</b><br/>
-                                        🎯 <b style="color:#16a34a;">Target: ${rec['Target']:.2f}</b>
-                                    </div>
-                                    {f"<div style='margin-top:4px;font-size:0.85rem;opacity:0.85;color:#22c55e;'>{favored_badge}</div>" if favored_badge else ""}
+                            # Build the near miss card HTML
+                            fib_color = '#10b981' if rec.get('FibZone') == 'discount' else '#f59e0b'
+
+                            card_html = f"""
+                            <div style="border:2px dashed #facc15;border-radius:14px;padding:10px;">
+                                <div style="display:flex;justify-content:space-between;align-items:baseline;">
+                                    <div style="font-weight:700;font-size:1.15rem">{rec['Symbol']}</div>
+                                    <div style="font-weight:600">${rec['Price']:.2f}</div>
                                 </div>
-                                """,
-                                unsafe_allow_html=True
-                            )
+                                <span style="font-size:0.85rem;color:#facc15;">⭐ Smart: {rec.get('SmartScore', '—')}</span>
+                            """
+
+                            if fib_badge:
+                                card_html += f"<br/><span style='font-size:0.85rem;color:{fib_color};'>{fib_badge}</span>"
+                            if sector_badge:
+                                card_html += f"<br/><span style='font-size:0.85rem;'>{sector_badge}</span>"
+                            if earnings_badge:
+                                card_html += f"<br/><span style='font-size:0.85rem;'>{earnings_badge}</span>"
+
+                            card_html += f"""
+                                <div style="font-size:0.9rem;opacity:0.9;margin-top:4px;">
+                                    🟡 Potential <b>{rec['NearMiss']}</b> setup forming<br/>
+                                    RSI14: <b>{rec['RSI14']}</b> | BandPos20: <b>{rec['BandPos20']}</b>
+                                </div>
+                                <div style="margin-top:6px;font-size:0.95rem;line-height:1.4;">
+                                    🛡️ Stop: <b>${rec['Stop']:.2f}</b><br/>
+                                    🎯 <b style="color:#16a34a;">Target: ${rec['Target']:.2f}</b>
+                                </div>
+                            """
+
+                            if favored_badge:
+                                card_html += f"<div style='margin-top:4px;font-size:0.85rem;opacity:0.85;color:#22c55e;'>{favored_badge}</div>"
+
+                            card_html += "</div>"
+
+                            st.markdown(card_html, unsafe_allow_html=True)
 
                             st.markdown(
                                 f"<div style='font-size:0.85rem;opacity:0.75;margin-top:-4px;'>🧭 Context: <b>{rec.get('SetupContext', 'N/A')}</b></div>",
@@ -1234,51 +1252,63 @@ def scanner_ui(TIINGO_TOKEN):
                             else:
                                 fib_badge = f"⚠️ Premium Zone ({rec['FibPosition']:.0f}% Fib)"
 
-                        if has_fund_score:
-                            st.markdown(
-                                f"""
-                                <div style="border:2px solid {'#22c55e' if rec['Setup']=='Breakout' else ('#3b82f6' if rec['Setup']=='Pullback' else '#9ca3af')};border-radius:14px;padding:10px;">
-                                    <div style="display:flex;justify-content:space-between;align-items:baseline;">
-                                        <div style="font-weight:700;font-size:1.15rem">{rec['Symbol']}</div>
-                                        <div style="font-weight:600">${rec['Price']:.2f}</div>
-                                    </div>
-                                    <div style="margin-top:4px;">
-                                        <span style="font-size:0.85rem;color:#10b981;">💎 Fund: {rec['FundScore']} ({rec['FundGrade']})</span>
-                                        {f"<br/><span style='font-size:0.85rem;color:{'#10b981' if rec['FibZone']=='discount' else '#f59e0b'};'>{fib_badge}</span>" if fib_badge else ""}
-                                    </div>
-                                    <div style="font-size:0.9rem;opacity:0.9;margin-top:4px;">
-                                        Setup: <b>{rec['Setup']}</b> &nbsp;|&nbsp; RSI14: <b>{rec['RSI14']}</b> &nbsp;|&nbsp; Vol: <b>{rec['Volume']:,}</b><br/>
-                                        EMA20&gt;EMA50: <b>{'✅' if rec['EMA20>EMA50'] else '❌'}</b> &nbsp;|&nbsp; BandPos20: <b>{rec['BandPos20']}</b> &nbsp;|&nbsp; ATR14: <b>{rec['ATR14']}</b>
-                                    </div>
-                                    <div style="margin-top:6px;font-size:0.95rem;line-height:1.4;">
-                                        🛡️ Stop: <b>${rec['Stop']:.2f}</b><br/>
-                                        🎯 <b style="color:#16a34a;">Target: ${rec['Target']:.2f}</b>
-                                    </div>
-                                </div>
-                                """,
-                                unsafe_allow_html=True
-                            )
+                        # Build fundamentals card HTML
+                        fib_color = '#10b981' if rec.get('FibZone') == 'discount' else '#f59e0b'
+                        if rec['Setup'] == 'Breakout':
+                            border_color = '#22c55e'
+                        elif rec['Setup'] == 'Pullback':
+                            border_color = '#3b82f6'
                         else:
-                            st.markdown(
-                                f"""
-                                <div style="border:2px solid {'#22c55e' if rec['Setup']=='Breakout' else ('#3b82f6' if rec['Setup']=='Pullback' else '#9ca3af')};border-radius:14px;padding:10px;">
-                                    <div style="display:flex;justify-content:space-between;align-items:baseline;">
-                                        <div style="font-weight:700;font-size:1.15rem">{rec['Symbol']}</div>
-                                        <div style="font-weight:600">${rec['Price']:.2f}</div>
-                                    </div>
-                                    {f"<div style='margin-top:4px;'><span style='font-size:0.85rem;color:{'#10b981' if rec['FibZone']=='discount' else '#f59e0b'};'>{fib_badge}</span></div>" if fib_badge else ""}
-                                    <div style="font-size:0.9rem;opacity:0.9;margin-top:4px;">
-                                        Setup: <b>{rec['Setup']}</b> &nbsp;|&nbsp; RSI14: <b>{rec['RSI14']}</b> &nbsp;|&nbsp; Vol: <b>{rec['Volume']:,}</b><br/>
-                                        EMA20&gt;EMA50: <b>{'✅' if rec['EMA20>EMA50'] else '❌'}</b> &nbsp;|&nbsp; BandPos20: <b>{rec['BandPos20']}</b> &nbsp;|&nbsp; ATR14: <b>{rec['ATR14']}</b>
-                                    </div>
-                                    <div style="margin-top:6px;font-size:0.95rem;line-height:1.4;">
-                                        🛡️ Stop: <b>${rec['Stop']:.2f}</b><br/>
-                                        🎯 <b style="color:#16a34a;">Target: ${rec['Target']:.2f}</b>
-                                    </div>
+                            border_color = '#9ca3af'
+                        ema_check = '✅' if rec['EMA20>EMA50'] else '❌'
+
+                        if has_fund_score:
+                            card_html = f"""
+                            <div style="border:2px solid {border_color};border-radius:14px;padding:10px;">
+                                <div style="display:flex;justify-content:space-between;align-items:baseline;">
+                                    <div style="font-weight:700;font-size:1.15rem">{rec['Symbol']}</div>
+                                    <div style="font-weight:600">${rec['Price']:.2f}</div>
                                 </div>
-                                """,
-                                unsafe_allow_html=True
-                            )
+                                <div style="margin-top:4px;">
+                                    <span style="font-size:0.85rem;color:#10b981;">💎 Fund: {rec['FundScore']} ({rec['FundGrade']})</span>
+                            """
+                            if fib_badge:
+                                card_html += f"<br/><span style='font-size:0.85rem;color:{fib_color};'>{fib_badge}</span>"
+                            card_html += f"""
+                                </div>
+                                <div style="font-size:0.9rem;opacity:0.9;margin-top:4px;">
+                                    Setup: <b>{rec['Setup']}</b> &nbsp;|&nbsp; RSI14: <b>{rec['RSI14']}</b> &nbsp;|&nbsp; Vol: <b>{rec['Volume']:,}</b><br/>
+                                    EMA20&gt;EMA50: <b>{ema_check}</b> &nbsp;|&nbsp; BandPos20: <b>{rec['BandPos20']}</b> &nbsp;|&nbsp; ATR14: <b>{rec['ATR14']}</b>
+                                </div>
+                                <div style="margin-top:6px;font-size:0.95rem;line-height:1.4;">
+                                    🛡️ Stop: <b>${rec['Stop']:.2f}</b><br/>
+                                    🎯 <b style="color:#16a34a;">Target: ${rec['Target']:.2f}</b>
+                                </div>
+                            </div>
+                            """
+                        else:
+                            card_html = f"""
+                            <div style="border:2px solid {border_color};border-radius:14px;padding:10px;">
+                                <div style="display:flex;justify-content:space-between;align-items:baseline;">
+                                    <div style="font-weight:700;font-size:1.15rem">{rec['Symbol']}</div>
+                                    <div style="font-weight:600">${rec['Price']:.2f}</div>
+                                </div>
+                            """
+                            if fib_badge:
+                                card_html += f"<div style='margin-top:4px;'><span style='font-size:0.85rem;color:{fib_color};'>{fib_badge}</span></div>"
+                            card_html += f"""
+                                <div style="font-size:0.9rem;opacity:0.9;margin-top:4px;">
+                                    Setup: <b>{rec['Setup']}</b> &nbsp;|&nbsp; RSI14: <b>{rec['RSI14']}</b> &nbsp;|&nbsp; Vol: <b>{rec['Volume']:,}</b><br/>
+                                    EMA20&gt;EMA50: <b>{ema_check}</b> &nbsp;|&nbsp; BandPos20: <b>{rec['BandPos20']}</b> &nbsp;|&nbsp; ATR14: <b>{rec['ATR14']}</b>
+                                </div>
+                                <div style="margin-top:6px;font-size:0.95rem;line-height:1.4;">
+                                    🛡️ Stop: <b>${rec['Stop']:.2f}</b><br/>
+                                    🎯 <b style="color:#16a34a;">Target: ${rec['Target']:.2f}</b>
+                                </div>
+                            </div>
+                            """
+
+                        st.markdown(card_html, unsafe_allow_html=True)
 
                         cA, cB = st.columns(2)
                         with cA:
