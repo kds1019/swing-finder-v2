@@ -313,22 +313,24 @@ def scanner_ui(TIINGO_TOKEN):
                     market_bias = market["bias"]          # "Uptrend" or "Downtrend"
                     vol_regime = market["vol_regime"]    # "High Volatility" / "Low Volatility"
                     
-            if market_bias:
-                st.write(f"🧠 Smart bias active → {market_bias}, Volatility: {vol_regime}")
+            # Commented out to improve scan speed
+            # if market_bias:
+            #     st.write(f"🧠 Smart bias active → {market_bias}, Volatility: {vol_regime}")
 
 
             # --- Fetch & compute indicators ---
             df = tiingo_history(ticker, TIINGO_TOKEN, SCAN_LOOKBACK_DAYS)
             if df is None or df.empty:
-                st.write(f"⚠️ No Tiingo data for {ticker}")
+                # st.write(f"⚠️ No Tiingo data for {ticker}")  # Commented out for speed
                 return None
 
             if df is None or len(df) < 60:
                 return None
 
             df = compute_indicators(df)
-            if ticker in ["AAPL", "MSFT", "TSLA"]:
-                st.write(df.tail(1)[["Close","EMA20","EMA50","RSI14","BandPos20"]])
+            # Commented out debug output for speed
+            # if ticker in ["AAPL", "MSFT", "TSLA"]:
+            #     st.write(df.tail(1)[["Close","EMA20","EMA50","RSI14","BandPos20"]])
 
             last = df.iloc[-1]
 
@@ -529,7 +531,7 @@ def scanner_ui(TIINGO_TOKEN):
             earnings_warning = None
             try:
                 earnings_date = get_next_earnings_date(ticker, TIINGO_TOKEN)
-                if earnings_date and earnings_date not in ["N/A", "Not Scheduled"]:
+                if earnings_date and earnings_date not in ["N/A", "Not Scheduled", None]:
                     import pandas as pd
                     days_to_earnings = (pd.to_datetime(earnings_date) - pd.Timestamp.now()).days
                     if days_to_earnings <= 2:
@@ -538,14 +540,18 @@ def scanner_ui(TIINGO_TOKEN):
                         earnings_warning = "🟡 Earnings in 3-7 days"
                     elif days_to_earnings <= 30:
                         earnings_warning = "🟢 Earnings in 8-30 days"
-            except:
+            except Exception as e:
+                # Silently fail - earnings data is optional
                 pass
 
             # Get sector
             sector = "Unknown"
             try:
                 sector = get_tiingo_sector(ticker, TIINGO_TOKEN)
-            except:
+                if not sector or sector == "":
+                    sector = "Unknown"
+            except Exception as e:
+                # Silently fail - sector data is optional
                 pass
 
             # --- Build result card ---
@@ -585,12 +591,13 @@ def scanner_ui(TIINGO_TOKEN):
             }
 
             # --- Debug (optional, visible in console/UI logs) ---
-            if setup:
-                st.write(f"✅ {ticker}: Confirmed {setup} | Trend={trend_context}")
-            elif near_miss:
-                st.write(f"🟡 {ticker}: Near Miss → {near_type} | Trend={trend_context}")
-            else:
-                st.write(f"⚙️ {ticker}: No match | Trend={trend_context}")
+            # Commented out to improve scan speed
+            # if setup:
+            #     st.write(f"✅ {ticker}: Confirmed {setup} | Trend={trend_context}")
+            # elif near_miss:
+            #     st.write(f"🟡 {ticker}: Near Miss → {near_type} | Trend={trend_context}")
+            # else:
+            #     st.write(f"⚙️ {ticker}: No match | Trend={trend_context}")
 
             return card
 
