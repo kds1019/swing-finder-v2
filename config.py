@@ -194,7 +194,7 @@ ENABLE_SENTIMENT_ANALYSIS = True
 FORECAST_LOOKBACK = 20  # days for linear regression
 
 # Chart settings
-CHART_DEFAULT_DAYS = 200
+CHART_DEFAULT_DAYS = 90
 
 # ============================================================================
 # VALIDATION

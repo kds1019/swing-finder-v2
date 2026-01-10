@@ -33,7 +33,7 @@ def atr(df: pd.DataFrame, length: int = 14) -> pd.Series:
 
 # ---------------- Compute Common Indicators (used by Scanner) ----------------
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """Adds EMA20, EMA50, RSI14, ATR14, BandPos20, HH20, and LL20 to Tiingo OHLC data."""
+    """Adds EMA20, EMA50, EMA200, RSI14, ATR14, BandPos20, HH20, and LL20 to Tiingo OHLC data."""
     if df.empty:
         return df
 
@@ -44,6 +44,7 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     # --- Moving averages ---
     df["EMA20"] = ema(close, 20)
     df["EMA50"] = ema(close, 50)
+    df["EMA200"] = ema(close, 200)
 
     # --- RSI & ATR ---
     df["RSI14"] = rsi(close, 14)

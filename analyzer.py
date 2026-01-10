@@ -80,7 +80,8 @@ def analyzer_ui(TIINGO_TOKEN):
     run_analysis = st.button("Analyze") or auto_trigger
 
     if run_analysis:
-        df = tiingo_history(symbol, TIINGO_TOKEN, 200)
+        # Fetch 250 days to calculate EMA200, but will display last 90 days on chart
+        df = tiingo_history(symbol, TIINGO_TOKEN, 250)
 
         if df is None or df.empty:
             st.warning("⚠️ No historical data returned for this ticker.")
@@ -89,6 +90,7 @@ def analyzer_ui(TIINGO_TOKEN):
         # --- Indicators ---
         df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
         df["EMA50"] = df["Close"].ewm(span=50, adjust=False).mean()
+        df["EMA200"] = df["Close"].ewm(span=200, adjust=False).mean()
 
         # RSI (14)
         delta = df["Close"].diff()
@@ -116,6 +118,9 @@ def analyzer_ui(TIINGO_TOKEN):
         # --- Plot main chart + subplots ---
         from plotly.subplots import make_subplots
 
+        # Use last 90 days for display (clearer candlesticks)
+        df_display = df.tail(90).copy()
+
         fig = make_subplots(
             rows=3, cols=1,
             shared_xaxes=True,
@@ -126,10 +131,11 @@ def analyzer_ui(TIINGO_TOKEN):
 
         # Candlestick + EMAs
         fig.add_trace(go.Candlestick(
-            x=df["Date"], open=df["Open"], high=df["High"],
-            low=df["Low"], close=df["Close"], name="Price"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df["Date"], y=df["EMA20"], mode="lines", name="EMA20"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df["Date"], y=df["EMA50"], mode="lines", name="EMA50"), row=1, col=1)
+            x=df_display["Date"], open=df_display["Open"], high=df_display["High"],
+            low=df_display["Low"], close=df_display["Close"], name="Price"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_display["Date"], y=df_display["EMA20"], mode="lines", name="EMA20", line=dict(color="#3b82f6", width=2)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_display["Date"], y=df_display["EMA50"], mode="lines", name="EMA50", line=dict(color="#f59e0b", width=2)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_display["Date"], y=df_display["EMA200"], mode="lines", name="EMA200", line=dict(color="#ef4444", width=2.5)), row=1, col=1)
 
         # --- Fibonacci Retracement Levels ---
         try:
@@ -230,13 +236,13 @@ def analyzer_ui(TIINGO_TOKEN):
         except Exception as e:
             st.warning(f"Could not calculate S/R levels: {e}")
 
-        # MACD
-        fig.add_trace(go.Scatter(x=df["Date"], y=df["MACD"], mode="lines", name="MACD"), row=2, col=1)
-        fig.add_trace(go.Scatter(x=df["Date"], y=df["MACD_SIGNAL"], mode="lines", name="Signal"), row=2, col=1)
-        fig.add_trace(go.Bar(x=df["Date"], y=df["MACD_HIST"], name="Hist"), row=2, col=1)
+        # MACD (using 90-day display data)
+        fig.add_trace(go.Scatter(x=df_display["Date"], y=df_display["MACD"], mode="lines", name="MACD"), row=2, col=1)
+        fig.add_trace(go.Scatter(x=df_display["Date"], y=df_display["MACD_SIGNAL"], mode="lines", name="Signal"), row=2, col=1)
+        fig.add_trace(go.Bar(x=df_display["Date"], y=df_display["MACD_HIST"], name="Hist"), row=2, col=1)
 
-        # RSI
-        fig.add_trace(go.Scatter(x=df["Date"], y=df["RSI14"], mode="lines", name="RSI(14)"), row=3, col=1)
+        # RSI (using 90-day display data)
+        fig.add_trace(go.Scatter(x=df_display["Date"], y=df_display["RSI14"], mode="lines", name="RSI(14)"), row=3, col=1)
         fig.add_hline(y=70, line_dash="dot", line_color="red", row=3, col=1)
         fig.add_hline(y=30, line_dash="dot", line_color="green", row=3, col=1)
 
