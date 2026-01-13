@@ -1280,9 +1280,9 @@ def _render_open_positions(rows: List[Dict[str, Any]]) -> None:
             # Enhance trade data with intraday signals
             enhanced_trade_data = r.copy()
             if sig:
-                enhanced_trade_data["intraday_rsi"] = f"{sig.rsi:.1f}"
+                enhanced_trade_data["intraday_rsi"] = f"{sig.rsi:.1f}" if sig.rsi is not None else "N/A"
                 enhanced_trade_data["intraday_trend"] = "Bullish ✅" if sig.ema_fast_above_slow else "Bearish ⚠️"
-                enhanced_trade_data["intraday_volume"] = f"{sig.vol_ratio:.2f}x avg"
+                enhanced_trade_data["intraday_volume"] = f"{sig.vol_ratio:.2f}x avg" if sig.vol_ratio is not None else "N/A"
 
             # Live Update (most common for active trades)
             st.markdown("**📊 Live Trade Update**")
