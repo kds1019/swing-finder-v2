@@ -119,7 +119,10 @@ else:
 st.sidebar.markdown(f"**Last Updated:** {last_updated}")
 
 if st.sidebar.button("🔄 Refresh Tiingo Universe"):
+    # Clear the cache first so the new universe file is loaded
+    st.cache_data.clear()
     refresh_universe_manual(TIINGO_TOKEN)
+    st.rerun()  # Force a rerun to reload the universe
 
 
 # ---------------- Page Routing ----------------

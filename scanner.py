@@ -173,6 +173,12 @@ def scanner_ui(TIINGO_TOKEN):
         help="1=Very Strict (fewer, higher quality) | 3=Balanced | 5=Relaxed (more results)"
     )
 
+    # ---------------- Debug Mode in Sidebar ----------------
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 🐛 Debug Mode")
+    debug_ticker = st.sidebar.text_input("Check Specific Ticker", value="", placeholder="e.g., RNG, AAL").upper().strip()
+    debug_button = st.sidebar.button("🔍 Debug This Ticker")
+
     # Map sensitivity to thresholds
     sensitivity_map = {
         1: {"breakout_rsi": 65, "breakout_band": 0.70, "pullback_rsi_max": 40, "pullback_band": 0.30},
@@ -591,23 +597,35 @@ def scanner_ui(TIINGO_TOKEN):
             st.error("❌ No tickers loaded! Check your universe file or Tiingo API.")
             return []
 
-        # Shuffle to diversify early results & keep UI feeling live
-        random.seed()
-        random.shuffle(tickers)
+        # ✅ Prioritize watchlist tickers (scan them first)
+        watchlist = st.session_state.get("watchlist", [])
+        watchlist_tickers = [t for t in watchlist if t in tickers]
+        non_watchlist_tickers = [t for t in tickers if t not in watchlist]
 
-        # ✅ DEBUG: Show first 10 tickers to verify shuffle is working
+        # Shuffle non-watchlist tickers for diversity
+        random.seed()
+        random.shuffle(non_watchlist_tickers)
+
+        # Combine: watchlist first, then shuffled universe
+        tickers = watchlist_tickers + non_watchlist_tickers
+
+        # ✅ DEBUG: Show first 10 tickers to verify watchlist priority
         st.caption(f"🔀 **Scan Order (first 10):** {', '.join(tickers[:10])}")
-        st.caption(f"📊 **Total Universe:** {len(tickers)} tickers")
+        st.caption(f"📊 **Total Universe:** {len(tickers)} tickers ({len(watchlist_tickers)} from watchlist)")
 
         results: list[dict] = []
         progress = st.progress(0, text="🔎 Scanning U.S. market…")
         total = len(tickers)
         scanned = 0
 
-        for i in range(0, total, BATCH_TICKER_COUNT):
-            if len(results) >= max_cards:
-                break
-            batch = tickers[i:i + BATCH_TICKER_COUNT]
+        # ✅ Scan ALL tickers (paid Tiingo account = no rate limits)
+        # Watchlist tickers are scanned first for priority
+        tickers_to_scan = tickers
+
+        st.caption(f"🔍 **Scanning ALL {len(tickers_to_scan):,} tickers** (watchlist scanned first)")
+
+        for i in range(0, len(tickers_to_scan), BATCH_TICKER_COUNT):
+            batch = tickers_to_scan[i:i + BATCH_TICKER_COUNT]
             with futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
                 futs = [ex.submit(evaluate_ticker, t, mode, price_min, price_max, min_volume) for t in batch]
                 for f in futures.as_completed(futs):
@@ -615,14 +633,14 @@ def scanner_ui(TIINGO_TOKEN):
                     if rec is not None:
                         results.append(rec)
 
-            scanned = min(i + len(batch), total)
-            progress.progress(scanned / total, text=f"🔎 Scanning… {scanned}/{total} tickers | Hits: {len(results)}")
+            scanned = min(i + len(batch), len(tickers_to_scan))
+            progress.progress(scanned / len(tickers_to_scan), text=f"🔎 Scanning… {scanned}/{len(tickers_to_scan)} tickers | Hits: {len(results)}")
             time.sleep(REQUEST_PAUSE_S)
 
         progress.empty()
 
         # --- DEBUG: Show what we found ---
-        st.write(f"🔍 **Scan Complete:** Scanned {scanned} tickers, found {len(results)} total results")
+        st.write(f"🔍 **Scan Complete:** Scanned {len(tickers_to_scan):,} tickers, found {len(results)} total results")
 
         # --- Sort by SmartScore (comprehensive ranking) ---
         # SmartScore already considers: RSI, BandPos, EMA trend, sector alignment, Fibonacci zone
@@ -660,6 +678,11 @@ def scanner_ui(TIINGO_TOKEN):
             st.caption(f"✅ **All Qualified Tickers ({len(all_symbols)}):** {', '.join(all_symbols[:50])}" +
                       (f" ... and {len(all_symbols) - 50} more" if len(all_symbols) > 50 else ""))
 
+        # ✅ Apply max_cards limit AFTER scanning (so we scan all tickers but only display top results)
+        if len(unique_results) > max_cards:
+            st.info(f"📊 Found {len(unique_results)} total setups, showing top {max_cards} by SmartScore")
+            return unique_results[:max_cards]
+
         return unique_results
 
 
@@ -669,8 +692,8 @@ def scanner_ui(TIINGO_TOKEN):
     def check_ticker_failure_reason(ticker, price_min, price_max, min_volume):
         """Identify why a watchlist ticker failed the filters."""
         try:
-            df = fetch_tiingo(ticker, 10)
-            if df.empty:
+            df = tiingo_history(ticker, TIINGO_TOKEN, SCAN_LOOKBACK_DAYS)
+            if df is None or df.empty:
                 return "no data returned from Tiingo"
 
             last_close = float(df["Close"].iloc[-1])
@@ -762,75 +785,233 @@ def scanner_ui(TIINGO_TOKEN):
             ["Pullback", "Breakout", "Both"],
             index=["Pullback", "Breakout", "Both"].index(st.session_state.get("setup_mode", "Breakout"))
         )
-        mode = st.session_state["setup_mode"]  # keep local reference for clarity
 
-        c1, c2 = st.columns(2)
-        with c1:
-            price_min = st.number_input("Min Price ($)", value=10.0, min_value=0.0, step=0.5)
-        with c2:
-            price_max = st.number_input("Max Price ($)", value=60.0, min_value=0.0, step=1.0)
+    # ✅ Handle debug button click (from sidebar) - OUTSIDE sidebar context
+    if debug_button and debug_ticker:
+        st.markdown("---")
+        st.markdown(f"### 🔍 Debugging {debug_ticker}")
 
-        min_volume = st.number_input("Min Volume (shares, latest bar)", value=1_000_000, step=50_000, min_value=0)
-        max_cards  = st.slider("Max Cards to Show", min_value=24, max_value=500, value=120, step=12)
-
-        # ---------------- Smart Mode toggle ----------------
-        smart_mode = st.toggle("🧠 Enable Smart Mode", value=st.session_state.get("smart_mode", False))
-        st.session_state["smart_mode"] = smart_mode
-
-        # ---------------- Fibonacci Filter toggle ----------------
-        fib_filter = st.checkbox("💎 Only show Discount Zone entries (below 50% Fib)", value=False,
-                                 help="Filter results to only show stocks in the discount zone (0-50% Fibonacci retracement). This finds better risk/reward entries.")
-        st.session_state["fib_filter"] = fib_filter
-
-        # ---------------- Earnings Filter toggle ----------------
-        earnings_filter = st.checkbox("⚠️ Exclude stocks with earnings in next 7 days", value=False,
-                                     help="Filter out stocks with upcoming earnings to avoid gap risk.")
-        st.session_state["earnings_filter"] = earnings_filter
-
-        # ---------------- Sector Filter toggle ----------------
-        sector_filter = st.checkbox("🔥 Only show stocks in hot sectors", value=False,
-                                   help="Filter to only show stocks in sectors with positive momentum (requires Smart Mode).")
-        st.session_state["sector_filter"] = sector_filter
-
-        # Make sure smart_context exists
-        if "smart_context" not in st.session_state:
-            st.session_state["smart_context"] = {}
-
-        # ---------------- Compute favored sectors when Smart Mode is enabled ----------------
-        if st.session_state["smart_mode"]:
+        with st.spinner(f"Analyzing {debug_ticker}..."):
             try:
-                sector_df = get_sector_snapshot(TIINGO_TOKEN)
-                favored = sector_df.loc[sector_df["Bias"] == "Uptrend", "Sector"].tolist()
+                # Get current settings
+                current_mode = st.session_state.get("setup_mode", "Both")
+                current_price_min = st.session_state.get("price_min", 10.0)
+                current_price_max = st.session_state.get("price_max", 75.0)
+                current_min_volume = st.session_state.get("min_volume", 500000)
 
-                # ✅ Store both DataFrame and list in smart_context
-                st.session_state["smart_context"]["sectors_df"] = sector_df
-                st.session_state["smart_context"]["favored_sectors"] = favored
+                # Fetch data
+                df = tiingo_history(debug_ticker, TIINGO_TOKEN, SCAN_LOOKBACK_DAYS)
 
-                # ✅ Display current favored sectors
-                if favored:
-                    st.success("🌟 Favored sectors: " + ", ".join(favored))
+                if df is None or df.empty:
+                    st.error(f"❌ No data available for {debug_ticker}")
                 else:
-                    st.info("🌥️ No favored sectors right now")
+                    # Compute indicators
+                    df = compute_indicators(df)
+                    last = df.iloc[-1]
+
+                    # Extract values
+                    price = float(last["Close"])
+                    volume = float(last["Volume"])
+                    rsi = float(last.get("RSI14", 0))
+                    ema20 = float(last.get("EMA20", 0))
+                    ema50 = float(last.get("EMA50", 0))
+                    band = float(last.get("BandPos20", 0))
+                    atr = float(last.get("ATR14", 0))
+
+                    # Display raw values
+                    st.success(f"✅ Data loaded for {debug_ticker}")
+
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Price", f"${price:.2f}")
+                        st.metric("Volume", f"{volume:,.0f}")
+                    with col2:
+                        st.metric("RSI14", f"{rsi:.1f}")
+                        st.metric("BandPos20", f"{band:.2f}")
+                    with col3:
+                        st.metric("EMA20", f"${ema20:.2f}")
+                        st.metric("EMA50", f"${ema50:.2f}")
+
+                    # Check filters
+                    st.markdown("### 📋 Filter Check")
+
+                    checks = []
+
+                    # Price filter
+                    if current_price_min <= price <= current_price_max:
+                        checks.append(("✅", f"Price ${price:.2f} is within ${current_price_min}-${current_price_max}"))
+                    else:
+                        checks.append(("❌", f"Price ${price:.2f} is OUTSIDE ${current_price_min}-${current_price_max}"))
+
+                    # Volume filter
+                    if volume >= current_min_volume:
+                        checks.append(("✅", f"Volume {volume:,.0f} is above {current_min_volume:,.0f}"))
+                    else:
+                        checks.append(("❌", f"Volume {volume:,.0f} is BELOW {current_min_volume:,.0f}"))
+
+                    # EMA trend
+                    if ema20 > ema50:
+                        checks.append(("✅", f"EMA20 (${ema20:.2f}) > EMA50 (${ema50:.2f}) - UPTREND"))
+                    else:
+                        checks.append(("❌", f"EMA20 (${ema20:.2f}) < EMA50 (${ema50:.2f}) - DOWNTREND"))
+
+                    # Setup classification
+                    st.markdown("### 🎯 Setup Classification")
+
+                    # Get sensitivity thresholds (use actual sensitivity from slider)
+                    sensitivity_map = {
+                        1: {"breakout_rsi": 65, "breakout_band": 0.70, "pullback_rsi_max": 40, "pullback_band": 0.30},
+                        2: {"breakout_rsi": 60, "breakout_band": 0.65, "pullback_rsi_max": 45, "pullback_band": 0.35},
+                        3: {"breakout_rsi": 55, "breakout_band": 0.55, "pullback_rsi_max": 50, "pullback_band": 0.45},
+                        4: {"breakout_rsi": 52, "breakout_band": 0.50, "pullback_rsi_max": 52, "pullback_band": 0.50},
+                        5: {"breakout_rsi": 50, "breakout_band": 0.45, "pullback_rsi_max": 55, "pullback_band": 0.55},
+                    }
+                    base_thresholds = sensitivity_map[sensitivity]
+
+                    # ✅ Apply market bias adjustment (same as actual scan)
+                    rsi_buffer = 0
+                    band_buffer = 0
+                    market_bias = None
+
+                    if st.session_state.get("smart_mode", False):
+                        market = get_market_snapshot(TIINGO_TOKEN)
+                        if market:
+                            market_bias = market["bias"]
+                            if market_bias == "Uptrend":
+                                rsi_buffer = -3
+                                band_buffer = -0.05
+                            elif market_bias == "Downtrend":
+                                rsi_buffer = +3
+                                band_buffer = +0.05
+
+                    # Apply adjustments
+                    breakout_rsi_threshold = base_thresholds["breakout_rsi"] + rsi_buffer
+                    breakout_band_threshold = base_thresholds["breakout_band"] + band_buffer
+                    pullback_rsi_threshold = base_thresholds["pullback_rsi_max"] + rsi_buffer
+                    pullback_band_threshold = base_thresholds["pullback_band"] + band_buffer
+
+                    # Show market bias if active
+                    if market_bias:
+                        st.info(f"🧠 Smart Mode Active: Market is in **{market_bias}** (RSI buffer: {rsi_buffer:+.0f}, Band buffer: {band_buffer:+.2f})")
+
+                    if ema20 > ema50:
+                        # Check Breakout
+                        if rsi > breakout_rsi_threshold and band > breakout_band_threshold:
+                            checks.append(("✅", f"BREAKOUT SETUP: RSI {rsi:.1f} > {breakout_rsi_threshold:.0f}, Band {band:.2f} > {breakout_band_threshold:.2f}"))
+                        else:
+                            checks.append(("🟡", f"Not Breakout: RSI {rsi:.1f} (need >{breakout_rsi_threshold:.0f}), Band {band:.2f} (need >{breakout_band_threshold:.2f})"))
+
+                        # Check Pullback
+                        if rsi < pullback_rsi_threshold and band <= pullback_band_threshold and price <= ema20:
+                            checks.append(("✅", f"PULLBACK SETUP: RSI {rsi:.1f} < {pullback_rsi_threshold:.0f}, Band {band:.2f} <= {pullback_band_threshold:.2f}, Price <= EMA20"))
+                        else:
+                            reasons = []
+                            if rsi >= pullback_rsi_threshold:
+                                reasons.append(f"RSI {rsi:.1f} >= {pullback_rsi_threshold:.0f}")
+                            if band > pullback_band_threshold:
+                                reasons.append(f"Band {band:.2f} > {pullback_band_threshold:.2f}")
+                            if price > ema20:
+                                reasons.append(f"Price ${price:.2f} > EMA20 ${ema20:.2f}")
+                            checks.append(("🟡", f"Not Pullback: {', '.join(reasons)}"))
+
+                        # Check Near Miss
+                        if 40 <= rsi <= 70 and 0.20 <= band <= 0.60:
+                            checks.append(("🟡", f"NEAR MISS: RSI {rsi:.1f} in range [40-70], Band {band:.2f} in range [0.20-0.60]"))
+                    else:
+                        checks.append(("❌", "No setup possible - DOWNTREND (EMA20 < EMA50)"))
+
+                    # Display all checks
+                    for icon, msg in checks:
+                        st.write(f"{icon} {msg}")
+
+                    # Final verdict
+                    st.markdown("### 🎯 Final Verdict")
+                    rec = evaluate_ticker(debug_ticker, current_mode, current_price_min, current_price_max, current_min_volume)
+                    if rec:
+                        st.success(f"✅ {debug_ticker} PASSES filters as: {rec.get('Setup', 'Unknown')}")
+                        st.json(rec)
+                    else:
+                        st.error(f"❌ {debug_ticker} FAILS filters - would NOT appear in scan results")
 
             except Exception as e:
-                st.warning(f"⚠️ Smart Mode failed to load sectors: {e}")
-                st.session_state["smart_context"]["sectors_df"] = None
-                st.session_state["smart_context"]["favored_sectors"] = []
-        else:
-            # ✅ Always keep keys initialized even if Smart Mode is off
+                st.error(f"❌ Error analyzing {debug_ticker}: {e}")
+                import traceback
+                st.code(traceback.format_exc())
+
+    mode = st.session_state["setup_mode"]  # keep local reference for clarity
+
+    c1, c2 = st.columns(2)
+    with c1:
+        price_min = st.number_input("Min Price ($)", value=10.0, min_value=0.0, step=0.5)
+    with c2:
+        price_max = st.number_input("Max Price ($)", value=60.0, min_value=0.0, step=1.0)
+
+    min_volume = st.number_input("Min Volume (shares, latest bar)", value=1_000_000, step=50_000, min_value=0)
+    max_cards  = st.slider("Max Cards to Show", min_value=24, max_value=500, value=120, step=12)
+
+    # ✅ Store in session state for debug mode
+    st.session_state["price_min"] = price_min
+    st.session_state["price_max"] = price_max
+    st.session_state["min_volume"] = min_volume
+
+    # ---------------- Smart Mode toggle ----------------
+    smart_mode = st.toggle("🧠 Enable Smart Mode", value=st.session_state.get("smart_mode", False))
+    st.session_state["smart_mode"] = smart_mode
+
+    # ---------------- Fibonacci Filter toggle ----------------
+    fib_filter = st.checkbox("💎 Only show Discount Zone entries (below 50% Fib)", value=False,
+                             help="Filter results to only show stocks in the discount zone (0-50% Fibonacci retracement). This finds better risk/reward entries.")
+    st.session_state["fib_filter"] = fib_filter
+
+    # ---------------- Earnings Filter toggle ----------------
+    earnings_filter = st.checkbox("⚠️ Exclude stocks with earnings in next 7 days", value=False,
+                                 help="Filter out stocks with upcoming earnings to avoid gap risk.")
+    st.session_state["earnings_filter"] = earnings_filter
+
+    # ---------------- Sector Filter toggle ----------------
+    sector_filter = st.checkbox("🔥 Only show stocks in hot sectors", value=False,
+                               help="Filter to only show stocks in sectors with positive momentum (requires Smart Mode).")
+    st.session_state["sector_filter"] = sector_filter
+
+    # Make sure smart_context exists
+    if "smart_context" not in st.session_state:
+        st.session_state["smart_context"] = {}
+
+    # ---------------- Compute favored sectors when Smart Mode is enabled ----------------
+    if st.session_state["smart_mode"]:
+        try:
+            sector_df = get_sector_snapshot(TIINGO_TOKEN)
+            favored = sector_df.loc[sector_df["Bias"] == "Uptrend", "Sector"].tolist()
+
+            # ✅ Store both DataFrame and list in smart_context
+            st.session_state["smart_context"]["sectors_df"] = sector_df
+            st.session_state["smart_context"]["favored_sectors"] = favored
+
+            # ✅ Display current favored sectors
+            if favored:
+                st.success("🌟 Favored sectors: " + ", ".join(favored))
+            else:
+                st.info("🌥️ No favored sectors right now")
+
+        except Exception as e:
+            st.warning(f"⚠️ Smart Mode failed to load sectors: {e}")
             st.session_state["smart_context"]["sectors_df"] = None
             st.session_state["smart_context"]["favored_sectors"] = []
+    else:
+        # ✅ Always keep keys initialized even if Smart Mode is off
+        st.session_state["smart_context"]["sectors_df"] = None
+        st.session_state["smart_context"]["favored_sectors"] = []
 
 
-        st.markdown("---")
-        st.caption("**Trade Plan Defaults** (used for Target/Stop on each card)")
-        c3, c4 = st.columns(2)
-        with c3:
-            st.session_state["risk_stop_atr_mult"] = st.number_input("Stop = ATR ×", value=float(st.session_state["risk_stop_atr_mult"]), min_value=0.5, step=0.5)
-        with c4:
-            st.session_state["risk_rr"] = st.number_input("Reward Ratio (R)", value=float(st.session_state["risk_rr"]), min_value=0.5, step=0.5)
+    st.markdown("---")
+    st.caption("**Trade Plan Defaults** (used for Target/Stop on each card)")
+    c3, c4 = st.columns(2)
+    with c3:
+        st.session_state["risk_stop_atr_mult"] = st.number_input("Stop = ATR ×", value=float(st.session_state["risk_stop_atr_mult"]), min_value=0.5, step=0.5)
+    with c4:
+        st.session_state["risk_rr"] = st.number_input("Reward Ratio (R)", value=float(st.session_state["risk_rr"]), min_value=0.5, step=0.5)
 
-        run_scan = st.button("🚀 Run Full U.S. Scan", use_container_width=True)
+    run_scan = st.button("🚀 Run Full U.S. Scan", use_container_width=True)
 
     # ---------------- UI: Results Grid ----------------
     if st.session_state.get("smart_mode", False):

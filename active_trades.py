@@ -745,6 +745,94 @@ def _sidebar_controls(rows: List[Dict[str, Any]]) -> str:
             action = f"ticker:{selected}"
 
 
+    # Trailing Stop Loss Settings
+    st.sidebar.divider()
+    st.sidebar.markdown("### 🎯 Trailing Stop Settings")
+
+    enable_trailing = st.sidebar.checkbox(
+        "Enable Auto Trailing Stop",
+        value=False,
+        key="atc_enable_trailing",
+        help="Automatically move stop loss as price moves in your favor"
+    )
+
+    if enable_trailing:
+        trail_method = st.sidebar.selectbox(
+            "Trailing Method",
+            options=["R-Multiple", "ATR-Based", "Percentage"],
+            index=0,
+            help="Choose how to trail your stop loss"
+        )
+
+        if trail_method == "R-Multiple":
+            st.sidebar.caption("📊 **R-Multiple Trailing** - Based on initial risk")
+            col_trail1, col_trail2 = st.sidebar.columns(2)
+            with col_trail1:
+                trail_at_1r = st.checkbox("At +1R → BE", value=True, help="Move stop to breakeven at +1R")
+                trail_at_2r = st.checkbox("At +2R → +1R", value=True, help="Move stop to +1R at +2R")
+            with col_trail2:
+                trail_at_3r = st.checkbox("At +3R → +2R", value=True, help="Move stop to +2R at +3R")
+                trail_at_4r = st.checkbox("At +4R → +3R", value=False, help="Move stop to +3R at +4R")
+
+        elif trail_method == "ATR-Based":
+            st.sidebar.caption("📈 **ATR Trailing** - Adapts to volatility")
+            atr_multiplier = st.sidebar.number_input(
+                "ATR Multiplier",
+                min_value=0.5,
+                max_value=5.0,
+                value=2.0,
+                step=0.5,
+                help="Trail stop = Current Price - (X × ATR). Higher = wider stop."
+            )
+            trail_trigger_r = st.sidebar.number_input(
+                "Start Trailing at +R",
+                min_value=0.0,
+                max_value=5.0,
+                value=1.0,
+                step=0.5,
+                help="Only start trailing after reaching this R-multiple"
+            )
+            st.sidebar.info(f"💡 Stop will trail {atr_multiplier}× ATR below price once you hit +{trail_trigger_r}R")
+            # Set dummy values for R-based (not used in ATR mode)
+            trail_at_1r = False
+            trail_at_2r = False
+            trail_at_3r = False
+            trail_at_4r = False
+
+        elif trail_method == "Percentage":
+            st.sidebar.caption("📉 **Percentage Trailing** - Fixed % below price")
+            trail_percentage = st.sidebar.number_input(
+                "Trail Percentage",
+                min_value=1.0,
+                max_value=20.0,
+                value=5.0,
+                step=0.5,
+                help="Stop = Current Price × (1 - X%). E.g., 5% = stop 5% below current price"
+            )
+            trail_trigger_r = st.sidebar.number_input(
+                "Start Trailing at +R",
+                min_value=0.0,
+                max_value=5.0,
+                value=1.0,
+                step=0.5,
+                help="Only start trailing after reaching this R-multiple"
+            )
+            st.sidebar.info(f"💡 Stop will trail {trail_percentage}% below price once you hit +{trail_trigger_r}R")
+            # Set dummy values for R-based (not used in % mode)
+            trail_at_1r = False
+            trail_at_2r = False
+            trail_at_3r = False
+            trail_at_4r = False
+    else:
+        trail_method = "R-Multiple"
+        trail_at_1r = False
+        trail_at_2r = False
+        trail_at_3r = False
+        trail_at_4r = False
+        atr_multiplier = 2.0
+        trail_percentage = 5.0
+        trail_trigger_r = 1.0
+
     c5, c6 = st.sidebar.columns(2)
     if c5.button("💾 Save/Update", key="atc_save"):
         if not symbol or entry <= 0 or stop <= 0 or shares <= 0:
@@ -761,6 +849,15 @@ def _sidebar_controls(rows: List[Dict[str, Any]]) -> str:
                 "status": "OPEN",
                 "notes": notes,
                 "webull_alerts": wab,
+                "trailing_enabled": enable_trailing,
+                "trail_method": trail_method if enable_trailing else "R-Multiple",
+                "trail_at_1r": trail_at_1r if enable_trailing else False,
+                "trail_at_2r": trail_at_2r if enable_trailing else False,
+                "trail_at_3r": trail_at_3r if enable_trailing else False,
+                "trail_at_4r": trail_at_4r if enable_trailing else False,
+                "atr_multiplier": atr_multiplier if enable_trailing else 2.0,
+                "trail_percentage": trail_percentage if enable_trailing else 5.0,
+                "trail_trigger_r": trail_trigger_r if enable_trailing else 1.0,
             }
             replaced = False
             for i, r in enumerate(rows):
@@ -857,6 +954,76 @@ def _refresh_intraday_for_opens(rows: List[Dict[str, Any]]) -> List[Dict[str, An
             r["last_price"] = round(float(price), 2)
             r = _compute_fields(r)
             print(f"✅ Updated {sym}: {old_price} → {r['last_price']}")
+
+            # Apply trailing stop logic if enabled
+            if r.get("trailing_enabled", False):
+                entry = r.get("entry", 0)
+                stop = r.get("stop", 0)
+                target = r.get("target", 0)
+                last = r.get("last_price", 0)
+                trail_method = r.get("trail_method", "R-Multiple")
+
+                if entry > 0 and stop > 0 and last > 0:
+                    risk_per_share = entry - stop
+                    unrealized_r = (last - entry) / risk_per_share if risk_per_share > 0 else 0
+
+                    old_stop = stop
+                    new_stop = stop
+                    trail_reason = ""
+
+                    # Method 1: R-Multiple Based Trailing
+                    if trail_method == "R-Multiple":
+                        # At +4R: Move stop to +3R
+                        if r.get("trail_at_4r", False) and unrealized_r >= 4.0:
+                            new_stop = entry + (3.0 * risk_per_share)
+                            trail_reason = "At +4R → moved stop to +3R"
+
+                        # At +3R: Move stop to +2R
+                        elif r.get("trail_at_3r", False) and unrealized_r >= 3.0:
+                            new_stop = entry + (2.0 * risk_per_share)
+                            trail_reason = "At +3R → moved stop to +2R"
+
+                        # At +2R: Move stop to +1R
+                        elif r.get("trail_at_2r", False) and unrealized_r >= 2.0:
+                            new_stop = entry + (1.0 * risk_per_share)
+                            trail_reason = "At +2R → moved stop to +1R"
+
+                        # At +1R: Move stop to breakeven
+                        elif r.get("trail_at_1r", False) and unrealized_r >= 1.0:
+                            new_stop = entry
+                            trail_reason = "At +1R → moved stop to breakeven"
+
+                    # Method 2: ATR-Based Trailing
+                    elif trail_method == "ATR-Based":
+                        trigger_r = r.get("trail_trigger_r", 1.0)
+                        if unrealized_r >= trigger_r:
+                            # Fetch current ATR for this symbol
+                            try:
+                                from utils.tiingo_utils import tiingo_history
+                                token = _get_tiingo_token()
+                                if token:
+                                    df = tiingo_history(sym, token, days=30)
+                                    if df is not None and len(df) > 0 and "ATR14" in df.columns:
+                                        current_atr = float(df["ATR14"].iloc[-1])
+                                        atr_mult = r.get("atr_multiplier", 2.0)
+                                        new_stop = last - (atr_mult * current_atr)
+                                        trail_reason = f"ATR Trail: {atr_mult}× ATR ({current_atr:.2f}) below ${last:.2f}"
+                            except Exception as e:
+                                print(f"⚠️ ATR fetch failed for {sym}: {e}")
+
+                    # Method 3: Percentage-Based Trailing
+                    elif trail_method == "Percentage":
+                        trigger_r = r.get("trail_trigger_r", 1.0)
+                        if unrealized_r >= trigger_r:
+                            trail_pct = r.get("trail_percentage", 5.0) / 100.0
+                            new_stop = last * (1 - trail_pct)
+                            trail_reason = f"% Trail: {trail_pct*100:.1f}% below ${last:.2f}"
+
+                    # Only update if new stop is higher than current stop (never lower it)
+                    if new_stop > old_stop:
+                        r["stop"] = round(new_stop, 2)
+                        r = _compute_fields(r)
+                        print(f"🎯 Trailing Stop: {sym} stop {old_stop:.2f} → {new_stop:.2f} ({trail_reason})")
 
         updated_rows.append(r)
         time.sleep(0.15)
@@ -1020,10 +1187,47 @@ def _render_open_positions(rows: List[Dict[str, Any]]) -> None:
     for idx, r in enumerate(opens):
         r = _compute_fields(r)
         sy = r.get("symbol", "")
-        st.markdown(
+
+        # Build header with trailing stop indicator
+        header_parts = [
             f"**{sy}** — entry {r.get('entry')} | stop {r.get('stop')} | "
             f"target {r.get('target', 0)} | shares {r.get('shares', 0)}"
-        )
+        ]
+
+        # Add trailing stop indicator if enabled
+        if r.get("trailing_enabled", False):
+            trail_method = r.get("trail_method", "R-Multiple")
+            unrealized_r = r.get("unrealized_r", 0)
+
+            if trail_method == "R-Multiple":
+                if unrealized_r >= 4.0 and r.get("trail_at_4r", False):
+                    header_parts.append(" | 🎯 **Trailing: +4R → Stop at +3R**")
+                elif unrealized_r >= 3.0 and r.get("trail_at_3r", False):
+                    header_parts.append(" | 🎯 **Trailing: +3R → Stop at +2R**")
+                elif unrealized_r >= 2.0 and r.get("trail_at_2r", False):
+                    header_parts.append(" | 🎯 **Trailing: +2R → Stop at +1R**")
+                elif unrealized_r >= 1.0 and r.get("trail_at_1r", False):
+                    header_parts.append(" | 🎯 **Trailing: +1R → Stop at BE**")
+                else:
+                    header_parts.append(" | 🎯 R-Trail Active")
+
+            elif trail_method == "ATR-Based":
+                atr_mult = r.get("atr_multiplier", 2.0)
+                trigger_r = r.get("trail_trigger_r", 1.0)
+                if unrealized_r >= trigger_r:
+                    header_parts.append(f" | 🎯 **ATR Trail: {atr_mult}× ATR**")
+                else:
+                    header_parts.append(f" | 🎯 ATR Trail (starts at +{trigger_r}R)")
+
+            elif trail_method == "Percentage":
+                trail_pct = r.get("trail_percentage", 5.0)
+                trigger_r = r.get("trail_trigger_r", 1.0)
+                if unrealized_r >= trigger_r:
+                    header_parts.append(f" | 🎯 **% Trail: {trail_pct}% below**")
+                else:
+                    header_parts.append(f" | 🎯 % Trail (starts at +{trigger_r}R)")
+
+        st.markdown("".join(header_parts))
         c = st.columns([1.2, 1, 1, 1, 1])
         with c[0]:
             last_val = st.number_input(

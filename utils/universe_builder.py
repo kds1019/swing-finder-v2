@@ -250,11 +250,33 @@ def refresh_universe_manual(token: str):
     import streamlit as st
     try:
         st.info("🔄 Refreshing Tiingo universe... please wait.")
-        symbols = fetch_tiingo_universe(token)
-        filtered = filter_symbols(symbols)
-        save_universe(filtered)
-        st.success(f"✅ Universe updated with {len(filtered)} tickers.")
+
+        # Step 1: Fetch symbols
+        with st.spinner("Fetching symbols from Tiingo..."):
+            symbols = fetch_tiingo_universe(token)
+            st.write(f"📥 Fetched {len(symbols)} symbols from Tiingo")
+
+        # Step 2: Filter symbols
+        with st.spinner("Filtering symbols..."):
+            filtered = filter_symbols(symbols)
+            st.write(f"✅ Filtered to {len(filtered)} quality tickers")
+
+        # Step 3: Save to file
+        with st.spinner("Saving to file..."):
+            save_universe(filtered)
+            st.write(f"💾 Saved to {CACHE_PATH}")
+
+        # Verify file was written
+        if os.path.exists(CACHE_PATH):
+            file_time = datetime.fromtimestamp(os.path.getmtime(CACHE_PATH))
+            st.success(f"✅ Universe updated with {len(filtered)} tickers at {file_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        else:
+            st.error(f"❌ File not found after save: {CACHE_PATH}")
+            return False
+
         return True
     except Exception as e:
         st.error(f"❌ Universe refresh failed: {e}")
+        import traceback
+        st.code(traceback.format_exc())
         return False

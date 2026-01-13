@@ -1,13 +1,13 @@
 {
   "meta": {
-    "last_updated": "2025-12-15 12:40",
-    "count": 1573,
+    "last_updated": "2026-01-11 17:55",
+    "count": 1331,
     "filters": {
       "description": "Quality swing trading stocks under $100",
       "exchanges": [
-        "NASDAQ",
+        "AMEX",
         "NYSE",
-        "AMEX"
+        "NASDAQ"
       ],
       "price_range": [
         10.0,
@@ -15,14 +15,13 @@
       ],
       "min_avg_volume": 1000000,
       "keep_types": [
-        "Common Stock",
         "Stock",
         "REIT",
-        "Equity"
+        "Equity",
+        "Common Stock"
       ],
       "excluded": "ETFs, funds, bonds, warrants, units, preferred shares, OTC junk"
-    },
-    "description": "Merged: Full Tiingo universe + S&P 500 + NASDAQ 100 + Popular stocks"
+    }
   },
   "tickers": [
     {
@@ -218,10 +217,6 @@
       "name": "DoorDash Inc - Class A"
     },
     {
-      "ticker": "DATI",
-      "name": "Digital Asset Monetary Network Inc"
-    },
-    {
       "ticker": "E",
       "name": "Eni Spa"
     },
@@ -310,10 +305,6 @@
       "name": "Genpact Ltd"
     },
     {
-      "ticker": "GABA",
-      "name": "Georgia Bancshares Inc"
-    },
-    {
       "ticker": "GABC",
       "name": "German American Bancorp Inc"
     },
@@ -364,6 +355,10 @@
     {
       "ticker": "GAME",
       "name": "GameSquare Holdings Inc"
+    },
+    {
+      "ticker": "GAMG",
+      "name": "Global Asset Management Group Inc"
     },
     {
       "ticker": "GAMI",
@@ -586,6 +581,10 @@
       "name": "FST Corp"
     },
     {
+      "ticker": "KC",
+      "name": "Kingsoft Cloud Holdings Ltd"
+    },
+    {
       "ticker": "L",
       "name": "Loews Corp"
     },
@@ -611,7 +610,7 @@
     },
     {
       "ticker": "LADX",
-      "name": "LadRx Corp"
+      "name": "LadRx Corporation"
     },
     {
       "ticker": "LAES",
@@ -1351,7 +1350,7 @@
     },
     {
       "ticker": "YCRM",
-      "name": "Yuengling`s Ice Cream Corporation"
+      "name": "Frequency Holdings Inc"
     },
     {
       "ticker": "YCS",
@@ -1440,10 +1439,6 @@
     {
       "ticker": "YJGJ",
       "name": "Yijia Group Corp"
-    },
-    {
-      "ticker": "YKAI",
-      "name": "YUKAI Health Group Ltd"
     },
     {
       "ticker": "Z",
@@ -1586,6 +1581,10 @@
       "name": "ON24 Inc"
     },
     {
+      "ticker": "RLAB",
+      "name": "M2MMA Inc"
+    },
+    {
       "ticker": "NUCO",
       "name": "NuCO2 Inc"
     },
@@ -1676,14 +1675,6 @@
     {
       "ticker": "CAMP",
       "name": "CAMP4 Therapeutics Corp"
-    },
-    {
-      "ticker": "FXLV",
-      "name": "F45 Training Holdings Inc"
-    },
-    {
-      "ticker": "FLES",
-      "name": "Auto Parts 4Less Group Inc"
     },
     {
       "ticker": "LOTE",
@@ -1843,7 +1834,7 @@
     },
     {
       "ticker": "ABL",
-      "name": "Abacus Life Inc - Class A"
+      "name": "Abacus Global Management Inc - Class A"
     },
     {
       "ticker": "ABLE",
@@ -1868,10 +1859,6 @@
     {
       "ticker": "ABML",
       "name": "American Battery Technology Company"
-    },
-    {
-      "ticker": "ABMT",
-      "name": "Advanced BioMedical Technologies Inc"
     },
     {
       "ticker": "ACA",
@@ -2047,7 +2034,7 @@
     },
     {
       "ticker": "BCBC",
-      "name": "Bitcoin Bancorp Inc"
+      "name": "Bitcoin Bancorp Inc Com"
     },
     {
       "ticker": "BCBP",
@@ -2090,6 +2077,10 @@
       "name": "Binah Capital Group Inc"
     },
     {
+      "ticker": "BCGD",
+      "name": "Baron Global Durable Advantage"
+    },
+    {
       "ticker": "BCH",
       "name": "Banco de Chile"
     },
@@ -2098,16 +2089,8 @@
       "name": "Grayscale Investments LLC"
     },
     {
-      "ticker": "BCHT",
-      "name": "Midwest Energy Emissions Corp"
-    },
-    {
       "ticker": "BCIC",
       "name": "Portman Ridge Finance Corp"
-    },
-    {
-      "ticker": "BCII",
-      "name": "BCII Enterprises Inc"
     },
     {
       "ticker": "CB",
@@ -2246,10 +2229,6 @@
       "name": "Muncy Columbia Financial Corp"
     },
     {
-      "ticker": "DAVA",
-      "name": "Endava plc"
-    },
-    {
       "ticker": "DB",
       "name": "Deutsche Bank AG"
     },
@@ -2310,10 +2289,6 @@
       "name": "Hudbay Minerals Inc"
     },
     {
-      "ticker": "LNBY",
-      "name": "Landbay Inc - Class A"
-    },
-    {
       "ticker": "DC",
       "name": "Dakota Gold Corp"
     },
@@ -2350,6 +2325,10 @@
       "name": "Dime Community Bancshares Inc"
     },
     {
+      "ticker": "DCOY",
+      "name": "Decoy Therapeutics Inc Com Par 0.0001 New"
+    },
+    {
       "ticker": "DCPH",
       "name": "Deciphera Pharmaceuticals Inc"
     },
@@ -2372,10 +2351,6 @@
     {
       "ticker": "RDCM",
       "name": "Radcom"
-    },
-    {
-      "ticker": "MDCX",
-      "name": "MDCorp"
     },
     {
       "ticker": "SE",
@@ -2434,11 +2409,11 @@
       "name": "Websky Inc"
     },
     {
-      "ticker": "ENGA",
+      "ticker": "BBUZ",
       "name": "Bebuzee Inc"
     },
     {
-      "ticker": "BBUZ",
+      "ticker": "ENGA",
       "name": "Bebuzee Inc"
     },
     {
@@ -2480,18 +2455,6 @@
     {
       "ticker": "REBN",
       "name": "Reborn Coffee Inc"
-    },
-    {
-      "ticker": "LSEB",
-      "name": "LSEB Creative Corp"
-    },
-    {
-      "ticker": "RBSH",
-      "name": "Rebus Holdings Inc"
-    },
-    {
-      "ticker": "BULL",
-      "name": "Webull Corporation"
     },
     {
       "ticker": "EC",
@@ -2612,10 +2575,6 @@
     {
       "ticker": "FBGL",
       "name": "FBS Global Ltd"
-    },
-    {
-      "ticker": "FBHS",
-      "name": null
     },
     {
       "ticker": "FC",
@@ -2840,6 +2799,14 @@
     {
       "ticker": "RNVT",
       "name": "Renovate Neighborhoods Inc"
+    },
+    {
+      "ticker": "RNG",
+      "name": "RingCentral Inc"
+    },
+    {
+      "ticker": "AAL",
+      "name": "American Airlines Group Inc"
     },
     {
       "ticker": "HCA",
@@ -3146,10 +3113,6 @@
       "name": "DIREXION DAILY&NBSP;BRKB BEAR 1X SHARES "
     },
     {
-      "ticker": "KC",
-      "name": "Kingsoft Cloud Holdings Ltd"
-    },
-    {
       "ticker": "KCHV",
       "name": "Kochav Defense Acquisition Corp - Class A"
     },
@@ -3274,10 +3237,6 @@
       "name": "OLB Group Inc"
     },
     {
-      "ticker": "ALB",
-      "name": "Albemarle Corp"
-    },
-    {
       "ticker": "LC",
       "name": "LendingClub Corp"
     },
@@ -3320,10 +3279,6 @@
     {
       "ticker": "LCLP",
       "name": "Life Clips Inc"
-    },
-    {
-      "ticker": "MAHN",
-      "name": "Mid-Atlantic Home Health Network Inc"
     },
     {
       "ticker": "MB",
@@ -3598,10 +3553,6 @@
       "name": "Broadcom Inc"
     },
     {
-      "ticker": "SEB",
-      "name": "Seaboard Corp"
-    },
-    {
       "ticker": "OBIO",
       "name": "Orchestra BioMed Holdings Inc"
     },
@@ -3634,12 +3585,12 @@
       "name": "AvroBio Inc"
     },
     {
-      "ticker": "IRBT",
-      "name": "Irobot Corp"
-    },
-    {
       "ticker": "BEEM",
       "name": "Beam Global"
+    },
+    {
+      "ticker": "IRBT",
+      "name": "Irobot Corp"
     },
     {
       "ticker": "HOOB",
@@ -3724,10 +3675,6 @@
     {
       "ticker": "CGLO",
       "name": "Coro Global Inc"
-    },
-    {
-      "ticker": "GOOI",
-      "name": "Gooi Global Inc"
     },
     {
       "ticker": "OC",
@@ -4131,7 +4078,7 @@
     },
     {
       "ticker": "SBET",
-      "name": "SharpLink Gaming Ltd"
+      "name": "SharpLink Gaming Inc"
     },
     {
       "ticker": "SBEV",
@@ -4266,10 +4213,6 @@
       "name": "Turtle Beach Corp"
     },
     {
-      "ticker": "TBET",
-      "name": "Tibet Pharmaceuticals Inc"
-    },
-    {
       "ticker": "TBEV",
       "name": "High Performance Beverages Company"
     },
@@ -4300,6 +4243,10 @@
     {
       "ticker": "TBN",
       "name": "Tamboran Resources Corp"
+    },
+    {
+      "ticker": "TBPH",
+      "name": "Theravance Biopharma Inc"
     },
     {
       "ticker": "TC",
@@ -4390,12 +4337,12 @@
       "name": "Quanterix Corp"
     },
     {
-      "ticker": "QURT",
-      "name": "Quarta-Rad Inc"
-    },
-    {
       "ticker": "SKYQ",
       "name": "Sky Quarry Inc"
+    },
+    {
+      "ticker": "QURT",
+      "name": "Quarta-Rad Inc"
     },
     {
       "ticker": "GGBL",
@@ -4470,18 +4417,6 @@
       "name": "Guardant Health Inc"
     },
     {
-      "ticker": "UG",
-      "name": "United-Guardian Inc"
-    },
-    {
-      "ticker": "CDID",
-      "name": "Quad Energy Corp New"
-    },
-    {
-      "ticker": "MMMM",
-      "name": "Quad M Solutions Inc"
-    },
-    {
       "ticker": "ORHB",
       "name": "ORHUB Inc"
     },
@@ -4508,10 +4443,6 @@
     {
       "ticker": "UI",
       "name": "Ubiquiti Inc"
-    },
-    {
-      "ticker": "BZRD",
-      "name": "Blubuzzard Inc"
     },
     {
       "ticker": "UCB",
@@ -4640,10 +4571,6 @@
     {
       "ticker": "ATPC",
       "name": "ATHEY PRODUCTS CORP"
-    },
-    {
-      "ticker": "SJM",
-      "name": "J.M. Smucker Company"
     },
     {
       "ticker": "ABVX",
@@ -4874,14 +4801,6 @@
       "name": "STWC Holdings Inc"
     },
     {
-      "ticker": "FLOC",
-      "name": "Flowco Holdings Inc - Class A"
-    },
-    {
-      "ticker": "OWCP",
-      "name": "OWC Pharmaceutical Research Corp"
-    },
-    {
       "ticker": "IEXA",
       "name": "IExalt Inc"
     },
@@ -5014,12 +4933,12 @@
       "name": "Excel Corp"
     },
     {
-      "ticker": "PCVX",
-      "name": "Vaxcyte Inc"
-    },
-    {
       "ticker": "HXL",
       "name": "Hexcel Corp"
+    },
+    {
+      "ticker": "PCVX",
+      "name": "Vaxcyte Inc"
     },
     {
       "ticker": "MXCT",
@@ -5178,7 +5097,7 @@
       "name": "Golden Royal Dev Inc"
     },
     {
-      "ticker": "CYBN",
+      "ticker": "HELP",
       "name": "Cybin Inc"
     },
     {
@@ -5378,6 +5297,10 @@
       "name": "Zai Lab Ltd"
     },
     {
+      "ticker": "BZRD",
+      "name": "Blubuzzard Inc"
+    },
+    {
       "ticker": "DPZ",
       "name": "Dominos Pizza Inc"
     },
@@ -5424,898 +5347,6 @@
     {
       "ticker": "BBVA",
       "name": "Banco Bilbao Vizcaya Argentaria."
-    },
-    {
-      "ticker": "AAPL",
-      "name": "AAPL (curated)"
-    },
-    {
-      "ticker": "ABNB",
-      "name": "ABNB (curated)"
-    },
-    {
-      "ticker": "ABT",
-      "name": "ABT (curated)"
-    },
-    {
-      "ticker": "ACN",
-      "name": "ACN (curated)"
-    },
-    {
-      "ticker": "ADI",
-      "name": "ADI (curated)"
-    },
-    {
-      "ticker": "ADP",
-      "name": "ADP (curated)"
-    },
-    {
-      "ticker": "ADSK",
-      "name": "ADSK (curated)"
-    },
-    {
-      "ticker": "AEP",
-      "name": "AEP (curated)"
-    },
-    {
-      "ticker": "AFRM",
-      "name": "AFRM (curated)"
-    },
-    {
-      "ticker": "AIG",
-      "name": "AIG (curated)"
-    },
-    {
-      "ticker": "AMAT",
-      "name": "AMAT (curated)"
-    },
-    {
-      "ticker": "AMD",
-      "name": "AMD (curated)"
-    },
-    {
-      "ticker": "AMGN",
-      "name": "AMGN (curated)"
-    },
-    {
-      "ticker": "AMT",
-      "name": "AMT (curated)"
-    },
-    {
-      "ticker": "AMZN",
-      "name": "AMZN (curated)"
-    },
-    {
-      "ticker": "ANSS",
-      "name": "ANSS (curated)"
-    },
-    {
-      "ticker": "AON",
-      "name": "AON (curated)"
-    },
-    {
-      "ticker": "APA",
-      "name": "APA (curated)"
-    },
-    {
-      "ticker": "APD",
-      "name": "APD (curated)"
-    },
-    {
-      "ticker": "ASML",
-      "name": "ASML (curated)"
-    },
-    {
-      "ticker": "AXP",
-      "name": "AXP (curated)"
-    },
-    {
-      "ticker": "BIIB",
-      "name": "BIIB (curated)"
-    },
-    {
-      "ticker": "BKNG",
-      "name": "BKNG (curated)"
-    },
-    {
-      "ticker": "BKR",
-      "name": "BKR (curated)"
-    },
-    {
-      "ticker": "BLK",
-      "name": "BLK (curated)"
-    },
-    {
-      "ticker": "BMY",
-      "name": "BMY (curated)"
-    },
-    {
-      "ticker": "CAG",
-      "name": "CAG (curated)"
-    },
-    {
-      "ticker": "CAT",
-      "name": "CAT (curated)"
-    },
-    {
-      "ticker": "CCI",
-      "name": "CCI (curated)"
-    },
-    {
-      "ticker": "CDNS",
-      "name": "CDNS (curated)"
-    },
-    {
-      "ticker": "CHD",
-      "name": "CHD (curated)"
-    },
-    {
-      "ticker": "CHTR",
-      "name": "CHTR (curated)"
-    },
-    {
-      "ticker": "CI",
-      "name": "CI (curated)"
-    },
-    {
-      "ticker": "CL",
-      "name": "CL (curated)"
-    },
-    {
-      "ticker": "CLX",
-      "name": "CLX (curated)"
-    },
-    {
-      "ticker": "CMCSA",
-      "name": "CMCSA (curated)"
-    },
-    {
-      "ticker": "CMG",
-      "name": "CMG (curated)"
-    },
-    {
-      "ticker": "COF",
-      "name": "COF (curated)"
-    },
-    {
-      "ticker": "COIN",
-      "name": "COIN (curated)"
-    },
-    {
-      "ticker": "COP",
-      "name": "COP (curated)"
-    },
-    {
-      "ticker": "COST",
-      "name": "COST (curated)"
-    },
-    {
-      "ticker": "CPB",
-      "name": "CPB (curated)"
-    },
-    {
-      "ticker": "CPRT",
-      "name": "CPRT (curated)"
-    },
-    {
-      "ticker": "CRM",
-      "name": "CRM (curated)"
-    },
-    {
-      "ticker": "CRWD",
-      "name": "CRWD (curated)"
-    },
-    {
-      "ticker": "CSCO",
-      "name": "CSCO (curated)"
-    },
-    {
-      "ticker": "CSGP",
-      "name": "CSGP (curated)"
-    },
-    {
-      "ticker": "CSX",
-      "name": "CSX (curated)"
-    },
-    {
-      "ticker": "CTAS",
-      "name": "CTAS (curated)"
-    },
-    {
-      "ticker": "CTSH",
-      "name": "CTSH (curated)"
-    },
-    {
-      "ticker": "CVS",
-      "name": "CVS (curated)"
-    },
-    {
-      "ticker": "CVX",
-      "name": "CVX (curated)"
-    },
-    {
-      "ticker": "DD",
-      "name": "DD (curated)"
-    },
-    {
-      "ticker": "DDOG",
-      "name": "DDOG (curated)"
-    },
-    {
-      "ticker": "DE",
-      "name": "DE (curated)"
-    },
-    {
-      "ticker": "DG",
-      "name": "DG (curated)"
-    },
-    {
-      "ticker": "DHR",
-      "name": "DHR (curated)"
-    },
-    {
-      "ticker": "DIS",
-      "name": "DIS (curated)"
-    },
-    {
-      "ticker": "DKNG",
-      "name": "DKNG (curated)"
-    },
-    {
-      "ticker": "DLR",
-      "name": "DLR (curated)"
-    },
-    {
-      "ticker": "DLTR",
-      "name": "DLTR (curated)"
-    },
-    {
-      "ticker": "DOCU",
-      "name": "DOCU (curated)"
-    },
-    {
-      "ticker": "DOW",
-      "name": "DOW (curated)"
-    },
-    {
-      "ticker": "DUK",
-      "name": "DUK (curated)"
-    },
-    {
-      "ticker": "DVN",
-      "name": "DVN (curated)"
-    },
-    {
-      "ticker": "ED",
-      "name": "ED (curated)"
-    },
-    {
-      "ticker": "ELV",
-      "name": "ELV (curated)"
-    },
-    {
-      "ticker": "EMR",
-      "name": "EMR (curated)"
-    },
-    {
-      "ticker": "EOG",
-      "name": "EOG (curated)"
-    },
-    {
-      "ticker": "EQIX",
-      "name": "EQIX (curated)"
-    },
-    {
-      "ticker": "ETN",
-      "name": "ETN (curated)"
-    },
-    {
-      "ticker": "EXC",
-      "name": "EXC (curated)"
-    },
-    {
-      "ticker": "EXPE",
-      "name": "EXPE (curated)"
-    },
-    {
-      "ticker": "FANG",
-      "name": "FANG (curated)"
-    },
-    {
-      "ticker": "FAST",
-      "name": "FAST (curated)"
-    },
-    {
-      "ticker": "FCX",
-      "name": "FCX (curated)"
-    },
-    {
-      "ticker": "FDX",
-      "name": "FDX (curated)"
-    },
-    {
-      "ticker": "FOX",
-      "name": "FOX (curated)"
-    },
-    {
-      "ticker": "FOXA",
-      "name": "FOXA (curated)"
-    },
-    {
-      "ticker": "FTNT",
-      "name": "FTNT (curated)"
-    },
-    {
-      "ticker": "GD",
-      "name": "GD (curated)"
-    },
-    {
-      "ticker": "GE",
-      "name": "GE (curated)"
-    },
-    {
-      "ticker": "GEHC",
-      "name": "GEHC (curated)"
-    },
-    {
-      "ticker": "GILD",
-      "name": "GILD (curated)"
-    },
-    {
-      "ticker": "GIS",
-      "name": "GIS (curated)"
-    },
-    {
-      "ticker": "GM",
-      "name": "GM (curated)"
-    },
-    {
-      "ticker": "GOOG",
-      "name": "GOOG (curated)"
-    },
-    {
-      "ticker": "GOOGL",
-      "name": "GOOGL (curated)"
-    },
-    {
-      "ticker": "GS",
-      "name": "GS (curated)"
-    },
-    {
-      "ticker": "HD",
-      "name": "HD (curated)"
-    },
-    {
-      "ticker": "HES",
-      "name": "HES (curated)"
-    },
-    {
-      "ticker": "HLT",
-      "name": "HLT (curated)"
-    },
-    {
-      "ticker": "HON",
-      "name": "HON (curated)"
-    },
-    {
-      "ticker": "HOOD",
-      "name": "HOOD (curated)"
-    },
-    {
-      "ticker": "HSY",
-      "name": "HSY (curated)"
-    },
-    {
-      "ticker": "HUM",
-      "name": "HUM (curated)"
-    },
-    {
-      "ticker": "IDXX",
-      "name": "IDXX (curated)"
-    },
-    {
-      "ticker": "ILMN",
-      "name": "ILMN (curated)"
-    },
-    {
-      "ticker": "INTC",
-      "name": "INTC (curated)"
-    },
-    {
-      "ticker": "INTU",
-      "name": "INTU (curated)"
-    },
-    {
-      "ticker": "IPG",
-      "name": "IPG (curated)"
-    },
-    {
-      "ticker": "ISRG",
-      "name": "ISRG (curated)"
-    },
-    {
-      "ticker": "ITW",
-      "name": "ITW (curated)"
-    },
-    {
-      "ticker": "JNJ",
-      "name": "JNJ (curated)"
-    },
-    {
-      "ticker": "JPM",
-      "name": "JPM (curated)"
-    },
-    {
-      "ticker": "K",
-      "name": "K (curated)"
-    },
-    {
-      "ticker": "KHC",
-      "name": "KHC (curated)"
-    },
-    {
-      "ticker": "KLAC",
-      "name": "KLAC (curated)"
-    },
-    {
-      "ticker": "KMB",
-      "name": "KMB (curated)"
-    },
-    {
-      "ticker": "KMI",
-      "name": "KMI (curated)"
-    },
-    {
-      "ticker": "KO",
-      "name": "KO (curated)"
-    },
-    {
-      "ticker": "LI",
-      "name": "LI (curated)"
-    },
-    {
-      "ticker": "LIN",
-      "name": "LIN (curated)"
-    },
-    {
-      "ticker": "LLY",
-      "name": "LLY (curated)"
-    },
-    {
-      "ticker": "LMT",
-      "name": "LMT (curated)"
-    },
-    {
-      "ticker": "LNG",
-      "name": "LNG (curated)"
-    },
-    {
-      "ticker": "LOW",
-      "name": "LOW (curated)"
-    },
-    {
-      "ticker": "LRCX",
-      "name": "LRCX (curated)"
-    },
-    {
-      "ticker": "LULU",
-      "name": "LULU (curated)"
-    },
-    {
-      "ticker": "LYFT",
-      "name": "LYFT (curated)"
-    },
-    {
-      "ticker": "MAR",
-      "name": "MAR (curated)"
-    },
-    {
-      "ticker": "MDB",
-      "name": "MDB (curated)"
-    },
-    {
-      "ticker": "MDLZ",
-      "name": "MDLZ (curated)"
-    },
-    {
-      "ticker": "MELI",
-      "name": "MELI (curated)"
-    },
-    {
-      "ticker": "MET",
-      "name": "MET (curated)"
-    },
-    {
-      "ticker": "META",
-      "name": "META (curated)"
-    },
-    {
-      "ticker": "MMC",
-      "name": "MMC (curated)"
-    },
-    {
-      "ticker": "MMM",
-      "name": "MMM (curated)"
-    },
-    {
-      "ticker": "MNST",
-      "name": "MNST (curated)"
-    },
-    {
-      "ticker": "MO",
-      "name": "MO (curated)"
-    },
-    {
-      "ticker": "MPC",
-      "name": "MPC (curated)"
-    },
-    {
-      "ticker": "MRK",
-      "name": "MRK (curated)"
-    },
-    {
-      "ticker": "MRNA",
-      "name": "MRNA (curated)"
-    },
-    {
-      "ticker": "MRO",
-      "name": "MRO (curated)"
-    },
-    {
-      "ticker": "MRVL",
-      "name": "MRVL (curated)"
-    },
-    {
-      "ticker": "MS",
-      "name": "MS (curated)"
-    },
-    {
-      "ticker": "MSFT",
-      "name": "MSFT (curated)"
-    },
-    {
-      "ticker": "MTCH",
-      "name": "MTCH (curated)"
-    },
-    {
-      "ticker": "MU",
-      "name": "MU (curated)"
-    },
-    {
-      "ticker": "NEE",
-      "name": "NEE (curated)"
-    },
-    {
-      "ticker": "NEM",
-      "name": "NEM (curated)"
-    },
-    {
-      "ticker": "NFLX",
-      "name": "NFLX (curated)"
-    },
-    {
-      "ticker": "NIO",
-      "name": "NIO (curated)"
-    },
-    {
-      "ticker": "NKE",
-      "name": "NKE (curated)"
-    },
-    {
-      "ticker": "NOC",
-      "name": "NOC (curated)"
-    },
-    {
-      "ticker": "NOW",
-      "name": "NOW (curated)"
-    },
-    {
-      "ticker": "NSC",
-      "name": "NSC (curated)"
-    },
-    {
-      "ticker": "NVDA",
-      "name": "NVDA (curated)"
-    },
-    {
-      "ticker": "NWS",
-      "name": "NWS (curated)"
-    },
-    {
-      "ticker": "NWSA",
-      "name": "NWSA (curated)"
-    },
-    {
-      "ticker": "NXPI",
-      "name": "NXPI (curated)"
-    },
-    {
-      "ticker": "ODFL",
-      "name": "ODFL (curated)"
-    },
-    {
-      "ticker": "OKE",
-      "name": "OKE (curated)"
-    },
-    {
-      "ticker": "OMC",
-      "name": "OMC (curated)"
-    },
-    {
-      "ticker": "ON",
-      "name": "ON (curated)"
-    },
-    {
-      "ticker": "ORCL",
-      "name": "ORCL (curated)"
-    },
-    {
-      "ticker": "ORLY",
-      "name": "ORLY (curated)"
-    },
-    {
-      "ticker": "OXY",
-      "name": "OXY (curated)"
-    },
-    {
-      "ticker": "PANW",
-      "name": "PANW (curated)"
-    },
-    {
-      "ticker": "PARA",
-      "name": "PARA (curated)"
-    },
-    {
-      "ticker": "PCAR",
-      "name": "PCAR (curated)"
-    },
-    {
-      "ticker": "PEG",
-      "name": "PEG (curated)"
-    },
-    {
-      "ticker": "PEP",
-      "name": "PEP (curated)"
-    },
-    {
-      "ticker": "PFE",
-      "name": "PFE (curated)"
-    },
-    {
-      "ticker": "PG",
-      "name": "PG (curated)"
-    },
-    {
-      "ticker": "PGR",
-      "name": "PGR (curated)"
-    },
-    {
-      "ticker": "PH",
-      "name": "PH (curated)"
-    },
-    {
-      "ticker": "PINS",
-      "name": "PINS (curated)"
-    },
-    {
-      "ticker": "PLD",
-      "name": "PLD (curated)"
-    },
-    {
-      "ticker": "PLTR",
-      "name": "PLTR (curated)"
-    },
-    {
-      "ticker": "PM",
-      "name": "PM (curated)"
-    },
-    {
-      "ticker": "PNC",
-      "name": "PNC (curated)"
-    },
-    {
-      "ticker": "PPG",
-      "name": "PPG (curated)"
-    },
-    {
-      "ticker": "PSA",
-      "name": "PSA (curated)"
-    },
-    {
-      "ticker": "PSX",
-      "name": "PSX (curated)"
-    },
-    {
-      "ticker": "PYPL",
-      "name": "PYPL (curated)"
-    },
-    {
-      "ticker": "REGN",
-      "name": "REGN (curated)"
-    },
-    {
-      "ticker": "RIVN",
-      "name": "RIVN (curated)"
-    },
-    {
-      "ticker": "ROST",
-      "name": "ROST (curated)"
-    },
-    {
-      "ticker": "RTX",
-      "name": "RTX (curated)"
-    },
-    {
-      "ticker": "SCHW",
-      "name": "SCHW (curated)"
-    },
-    {
-      "ticker": "SHW",
-      "name": "SHW (curated)"
-    },
-    {
-      "ticker": "SNAP",
-      "name": "SNAP (curated)"
-    },
-    {
-      "ticker": "SNOW",
-      "name": "SNOW (curated)"
-    },
-    {
-      "ticker": "SNPS",
-      "name": "SNPS (curated)"
-    },
-    {
-      "ticker": "SO",
-      "name": "SO (curated)"
-    },
-    {
-      "ticker": "SOFI",
-      "name": "SOFI (curated)"
-    },
-    {
-      "ticker": "SPG",
-      "name": "SPG (curated)"
-    },
-    {
-      "ticker": "SPOT",
-      "name": "SPOT (curated)"
-    },
-    {
-      "ticker": "SQ",
-      "name": "SQ (curated)"
-    },
-    {
-      "ticker": "SRE",
-      "name": "SRE (curated)"
-    },
-    {
-      "ticker": "TEAM",
-      "name": "TEAM (curated)"
-    },
-    {
-      "ticker": "TFC",
-      "name": "TFC (curated)"
-    },
-    {
-      "ticker": "TGT",
-      "name": "TGT (curated)"
-    },
-    {
-      "ticker": "TJX",
-      "name": "TJX (curated)"
-    },
-    {
-      "ticker": "TMO",
-      "name": "TMO (curated)"
-    },
-    {
-      "ticker": "TMUS",
-      "name": "TMUS (curated)"
-    },
-    {
-      "ticker": "TSLA",
-      "name": "TSLA (curated)"
-    },
-    {
-      "ticker": "TSN",
-      "name": "TSN (curated)"
-    },
-    {
-      "ticker": "TTWO",
-      "name": "TTWO (curated)"
-    },
-    {
-      "ticker": "TWLO",
-      "name": "TWLO (curated)"
-    },
-    {
-      "ticker": "UBER",
-      "name": "UBER (curated)"
-    },
-    {
-      "ticker": "ULTA",
-      "name": "ULTA (curated)"
-    },
-    {
-      "ticker": "UNH",
-      "name": "UNH (curated)"
-    },
-    {
-      "ticker": "UNP",
-      "name": "UNP (curated)"
-    },
-    {
-      "ticker": "UPS",
-      "name": "UPS (curated)"
-    },
-    {
-      "ticker": "USB",
-      "name": "USB (curated)"
-    },
-    {
-      "ticker": "VICI",
-      "name": "VICI (curated)"
-    },
-    {
-      "ticker": "VLO",
-      "name": "VLO (curated)"
-    },
-    {
-      "ticker": "VRSK",
-      "name": "VRSK (curated)"
-    },
-    {
-      "ticker": "VRTX",
-      "name": "VRTX (curated)"
-    },
-    {
-      "ticker": "VZ",
-      "name": "VZ (curated)"
-    },
-    {
-      "ticker": "WDAY",
-      "name": "WDAY (curated)"
-    },
-    {
-      "ticker": "WELL",
-      "name": "WELL (curated)"
-    },
-    {
-      "ticker": "WFC",
-      "name": "WFC (curated)"
-    },
-    {
-      "ticker": "WM",
-      "name": "WM (curated)"
-    },
-    {
-      "ticker": "WMB",
-      "name": "WMB (curated)"
-    },
-    {
-      "ticker": "WMT",
-      "name": "WMT (curated)"
-    },
-    {
-      "ticker": "XOM",
-      "name": "XOM (curated)"
-    },
-    {
-      "ticker": "XPEV",
-      "name": "XPEV (curated)"
-    },
-    {
-      "ticker": "YUM",
-      "name": "YUM (curated)"
-    },
-    {
-      "ticker": "ZM",
-      "name": "ZM (curated)"
-    },
-    {
-      "ticker": "ZS",
-      "name": "ZS (curated)"
     }
   ]
 }
