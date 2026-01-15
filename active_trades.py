@@ -372,9 +372,33 @@ def generate_trade_management_plan(trade: Dict[str, Any]) -> str:
 def _compute_fields(row: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(row)
     try:
-        entry = float(row.get("entry", 0) or 0)
-        stop = float(row.get("stop", 0) or 0)
-        target = float(row.get("target", 0) or 0)
+        # Use actual_entry if available, otherwise fall back to planned entry
+        planned_entry = float(row.get("entry", 0) or 0)
+        actual_entry = float(row.get("actual_entry", 0) or 0)
+        entry = actual_entry if actual_entry > 0 else planned_entry
+
+        # Use actual_stop if available, otherwise recalculate from actual entry
+        planned_stop = float(row.get("stop", 0) or 0)
+        actual_stop = float(row.get("actual_stop", 0) or 0)
+
+        # If we have actual entry but no actual stop, recalculate stop maintaining same R
+        if actual_entry > 0 and actual_stop == 0 and planned_entry > 0 and planned_stop > 0:
+            risk_ratio = (planned_entry - planned_stop) / planned_entry
+            actual_stop = actual_entry * (1 - risk_ratio)
+
+        stop = actual_stop if actual_stop > 0 else planned_stop
+
+        # Same for target
+        planned_target = float(row.get("target", 0) or 0)
+        actual_target = float(row.get("actual_target", 0) or 0)
+
+        # If we have actual entry but no actual target, recalculate maintaining same R:R
+        if actual_entry > 0 and actual_target == 0 and planned_entry > 0 and planned_target > 0:
+            reward_ratio = (planned_target - planned_entry) / planned_entry
+            actual_target = actual_entry * (1 + reward_ratio)
+
+        target = actual_target if actual_target > 0 else planned_target
+
         shares = float(row.get("shares", row.get("size", 0)) or 0)
         last = float(row.get("last_price", entry or 0) or 0)
 
@@ -684,6 +708,9 @@ def _sidebar_controls(rows: List[Dict[str, Any]]) -> str:
                     "entry": row.get("entry", 0.0),
                     "stop": row.get("stop", 0.0),
                     "target": row.get("target", 0.0),
+                    "actual_entry": row.get("actual_entry", 0.0),
+                    "actual_stop": row.get("actual_stop", 0.0),
+                    "actual_target": row.get("actual_target", 0.0),
                     "shares": row.get("shares", 0.0),
                     "notes": row.get("notes", ""),
                     "webull_alerts": row.get("webull_alerts", ""),
@@ -730,6 +757,67 @@ def _sidebar_controls(rows: List[Dict[str, Any]]) -> str:
     entry_date = st.sidebar.date_input(
         "Entry Date", value=dt.date.today(), key="atc_entry_date"
     )
+
+    # ✅ Actual Fill Prices (optional - overrides planned prices)
+    with st.sidebar.expander("💰 Actual Fill Prices (Optional)", expanded=False):
+        st.caption("Enter your actual fill prices to recalculate stop/target based on real entry")
+
+        # Get existing actual values if editing
+        actual_entry_default = 0.0
+        actual_stop_default = 0.0
+        actual_target_default = 0.0
+
+        if selected != "(new)":
+            row = next(
+                (r for r in rows if r.get("symbol") == selected and r.get("status") == "OPEN"),
+                None,
+            )
+            if row:
+                actual_entry_default = float(row.get("actual_entry", 0) or 0)
+                actual_stop_default = float(row.get("actual_stop", 0) or 0)
+                actual_target_default = float(row.get("actual_target", 0) or 0)
+
+        actual_entry = st.number_input(
+            "Actual Entry (leave 0 to use planned)",
+            min_value=0.0,
+            step=0.01,
+            value=actual_entry_default,
+            key="atc_actual_entry",
+            help="Your actual fill price (if different from planned entry)"
+        )
+
+        c_actual1, c_actual2 = st.columns(2)
+        with c_actual1:
+            actual_stop = st.number_input(
+                "Actual Stop",
+                min_value=0.0,
+                step=0.01,
+                value=actual_stop_default,
+                key="atc_actual_stop",
+                help="Leave 0 to auto-calculate from actual entry"
+            )
+        with c_actual2:
+            actual_target = st.number_input(
+                "Actual Target",
+                min_value=0.0,
+                step=0.01,
+                value=actual_target_default,
+                key="atc_actual_target",
+                help="Leave 0 to auto-calculate from actual entry"
+            )
+
+        # Show preview of recalculated values
+        if actual_entry > 0:
+            if actual_stop == 0 and entry > 0 and stop > 0:
+                risk_ratio = (entry - stop) / entry
+                calc_stop = actual_entry * (1 - risk_ratio)
+                st.caption(f"📊 Auto Stop: ${calc_stop:.2f}")
+
+            if actual_target == 0 and entry > 0 and target > 0:
+                reward_ratio = (target - entry) / entry
+                calc_target = actual_entry * (1 + reward_ratio)
+                st.caption(f"📊 Auto Target: ${calc_target:.2f}")
+
     notes = st.sidebar.text_area("Notes", value=defaults["notes"], key="atc_notes", height=80)
     wab = st.sidebar.text_area(
         "🔔 Webull Alerts", value=defaults["webull_alerts"], key="atc_wab", height=60
@@ -843,8 +931,11 @@ def _sidebar_controls(rows: List[Dict[str, Any]]) -> str:
                 "entry": float(entry),
                 "stop": float(stop),
                 "target": float(target),
+                "actual_entry": float(actual_entry) if actual_entry > 0 else 0.0,
+                "actual_stop": float(actual_stop) if actual_stop > 0 else 0.0,
+                "actual_target": float(actual_target) if actual_target > 0 else 0.0,
                 "shares": float(shares),
-                "last_price": float(entry),
+                "last_price": float(actual_entry if actual_entry > 0 else entry),
                 "opened": entry_date.isoformat(),
                 "status": "OPEN",
                 "notes": notes,
@@ -1188,11 +1279,26 @@ def _render_open_positions(rows: List[Dict[str, Any]]) -> None:
         r = _compute_fields(r)
         sy = r.get("symbol", "")
 
-        # Build header with trailing stop indicator
+        # Build header with actual prices if available
+        actual_entry = r.get('actual_entry', 0)
+        actual_stop = r.get('actual_stop', 0)
+        actual_target = r.get('actual_target', 0)
+
+        # Determine which prices to display
+        display_entry = actual_entry if actual_entry > 0 else r.get('entry')
+        display_stop = actual_stop if actual_stop > 0 else r.get('stop')
+        display_target = actual_target if actual_target > 0 else r.get('target', 0)
+
         header_parts = [
-            f"**{sy}** — entry {r.get('entry')} | stop {r.get('stop')} | "
-            f"target {r.get('target', 0)} | shares {r.get('shares', 0)}"
+            f"**{sy}** — entry {display_entry} | stop {display_stop} | "
+            f"target {display_target} | shares {r.get('shares', 0)}"
         ]
+
+        # Add indicator if using actual prices
+        if actual_entry > 0:
+            header_parts.append(" | 💰 **Using Actual Fill**")
+            if r.get('entry') != actual_entry:
+                header_parts.append(f" (planned: ${r.get('entry'):.2f})")
 
         # Add trailing stop indicator if enabled
         if r.get("trailing_enabled", False):
