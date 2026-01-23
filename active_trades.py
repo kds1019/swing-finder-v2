@@ -861,6 +861,10 @@ def _sidebar_controls(rows: List[Dict[str, Any]]) -> str:
             with col_trail2:
                 trail_at_3r = st.checkbox("At +3R → +2R", value=True, help="Move stop to +2R at +3R")
                 trail_at_4r = st.checkbox("At +4R → +3R", value=False, help="Move stop to +3R at +4R")
+            # Set dummy values for other methods (not used in R-Multiple mode)
+            atr_multiplier = 2.0
+            trail_percentage = 5.0
+            trail_trigger_r = 1.0
 
         elif trail_method == "ATR-Based":
             st.sidebar.caption("📈 **ATR Trailing** - Adapts to volatility")
@@ -881,11 +885,12 @@ def _sidebar_controls(rows: List[Dict[str, Any]]) -> str:
                 help="Only start trailing after reaching this R-multiple"
             )
             st.sidebar.info(f"💡 Stop will trail {atr_multiplier}× ATR below price once you hit +{trail_trigger_r}R")
-            # Set dummy values for R-based (not used in ATR mode)
+            # Set dummy values for other methods (not used in ATR mode)
             trail_at_1r = False
             trail_at_2r = False
             trail_at_3r = False
             trail_at_4r = False
+            trail_percentage = 5.0
 
         elif trail_method == "Percentage":
             st.sidebar.caption("📉 **Percentage Trailing** - Fixed % below price")
@@ -906,11 +911,12 @@ def _sidebar_controls(rows: List[Dict[str, Any]]) -> str:
                 help="Only start trailing after reaching this R-multiple"
             )
             st.sidebar.info(f"💡 Stop will trail {trail_percentage}% below price once you hit +{trail_trigger_r}R")
-            # Set dummy values for R-based (not used in % mode)
+            # Set dummy values for other methods (not used in % mode)
             trail_at_1r = False
             trail_at_2r = False
             trail_at_3r = False
             trail_at_4r = False
+            atr_multiplier = 2.0
     else:
         trail_method = "R-Multiple"
         trail_at_1r = False
