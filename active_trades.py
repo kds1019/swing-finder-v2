@@ -168,6 +168,29 @@ def get_intraday_price(symbol: str) -> Optional[float]:
     return _fetch_price_yahoo(symbol)
 
 
+def _fetch_atr(symbol: str) -> Optional[float]:
+    """Fetch ATR14 from daily data using Tiingo."""
+    tok = _get_tiingo_token()
+    if not tok:
+        return None
+
+    try:
+        from utils.tiingo_api import tiingo_history
+        from utils.indicators import compute_indicators
+
+        df = tiingo_history(symbol, tok, days=30)
+        if df is None or df.empty or len(df) < 14:
+            return None
+
+        df = compute_indicators(df)
+        if "ATR14" in df.columns:
+            return float(df["ATR14"].iloc[-1])
+    except Exception:
+        pass
+
+    return None
+
+
 # ---------------------------------------------------------------------------
 # TRADE JOURNAL & PERFORMANCE ANALYTICS (with Cloud Persistence)
 # ---------------------------------------------------------------------------
@@ -1285,6 +1308,13 @@ def _render_open_positions(rows: List[Dict[str, Any]]) -> None:
         r = _compute_fields(r)
         sy = r.get("symbol", "")
 
+        # Fetch ATR if trailing is enabled and ATR-based
+        if r.get("trailing_enabled") and r.get("trail_method") == "ATR-Based":
+            if "atr14" not in r or r.get("atr14", 0) == 0:
+                atr = _fetch_atr(sy)
+                if atr:
+                    r["atr14"] = atr
+
         # Build header with actual prices if available
         actual_entry = r.get('actual_entry', 0)
         actual_stop = r.get('actual_stop', 0)
@@ -1326,16 +1356,25 @@ def _render_open_positions(rows: List[Dict[str, Any]]) -> None:
             elif trail_method == "ATR-Based":
                 atr_mult = r.get("atr_multiplier", 2.0)
                 trigger_r = r.get("trail_trigger_r", 1.0)
-                if unrealized_r >= trigger_r:
-                    header_parts.append(f" | 🎯 **ATR Trail: {atr_mult}× ATR**")
+                atr_value = r.get("atr14", 0)  # Will be fetched below
+                last_price = r.get("last_price", 0)
+
+                if unrealized_r >= trigger_r and atr_value > 0 and last_price > 0:
+                    calculated_stop = last_price - (atr_mult * atr_value)
+                    header_parts.append(f" | 🎯 **ATR Trail: ${calculated_stop:.2f}** ({atr_mult}× ATR)")
+                elif unrealized_r >= trigger_r:
+                    header_parts.append(f" | 🎯 **ATR Trail: {atr_mult}× ATR** (calculating...)")
                 else:
                     header_parts.append(f" | 🎯 ATR Trail (starts at +{trigger_r}R)")
 
             elif trail_method == "Percentage":
                 trail_pct = r.get("trail_percentage", 5.0)
                 trigger_r = r.get("trail_trigger_r", 1.0)
-                if unrealized_r >= trigger_r:
-                    header_parts.append(f" | 🎯 **% Trail: {trail_pct}% below**")
+                last_price = r.get("last_price", 0)
+
+                if unrealized_r >= trigger_r and last_price > 0:
+                    calculated_stop = last_price * (1 - trail_pct / 100)
+                    header_parts.append(f" | 🎯 **% Trail: ${calculated_stop:.2f}** ({trail_pct}% below)")
                 else:
                     header_parts.append(f" | 🎯 % Trail (starts at +{trigger_r}R)")
 
@@ -1367,6 +1406,50 @@ def _render_open_positions(rows: List[Dict[str, Any]]) -> None:
                     break
             _save_trades(rows)
             st.rerun()
+
+        # 🎯 Trailing Stop Callout (if enabled and active)
+        if r.get("trailing_enabled", False):
+            trail_method = r.get("trail_method", "R-Multiple")
+            unrealized_r = r.get("unrealized_r", 0)
+            trigger_r = r.get("trail_trigger_r", 1.0)
+
+            if unrealized_r >= trigger_r:
+                if trail_method == "ATR-Based":
+                    atr_mult = r.get("atr_multiplier", 2.0)
+                    atr_value = r.get("atr14", 0)
+                    last_price = r.get("last_price", 0)
+
+                    if atr_value > 0 and last_price > 0:
+                        calculated_stop = last_price - (atr_mult * atr_value)
+                        st.info(f"🎯 **TRAILING STOP ACTIVE:** Set your stop at **${calculated_stop:.2f}** (Current Price ${last_price:.2f} - {atr_mult}× ATR ${atr_value:.2f})")
+                    else:
+                        st.warning(f"🎯 **TRAILING STOP ACTIVE:** ATR data loading... (Method: {atr_mult}× ATR)")
+
+                elif trail_method == "Percentage":
+                    trail_pct = r.get("trail_percentage", 5.0)
+                    last_price = r.get("last_price", 0)
+
+                    if last_price > 0:
+                        calculated_stop = last_price * (1 - trail_pct / 100)
+                        st.info(f"🎯 **TRAILING STOP ACTIVE:** Set your stop at **${calculated_stop:.2f}** ({trail_pct}% below ${last_price:.2f})")
+
+                elif trail_method == "R-Multiple":
+                    entry = r.get("entry", 0)
+                    stop = r.get("stop", 0)
+                    risk_ps = entry - stop if entry and stop else 0
+
+                    # Determine which R-level to trail to
+                    if unrealized_r >= 4.0 and r.get("trail_at_4r", False):
+                        new_stop = entry + (3 * risk_ps)
+                        st.info(f"🎯 **TRAILING STOP ACTIVE:** Move stop to **${new_stop:.2f}** (+3R)")
+                    elif unrealized_r >= 3.0 and r.get("trail_at_3r", False):
+                        new_stop = entry + (2 * risk_ps)
+                        st.info(f"🎯 **TRAILING STOP ACTIVE:** Move stop to **${new_stop:.2f}** (+2R)")
+                    elif unrealized_r >= 2.0 and r.get("trail_at_2r", False):
+                        new_stop = entry + (1 * risk_ps)
+                        st.info(f"🎯 **TRAILING STOP ACTIVE:** Move stop to **${new_stop:.2f}** (+1R)")
+                    elif unrealized_r >= 1.0 and r.get("trail_at_1r", False):
+                        st.info(f"🎯 **TRAILING STOP ACTIVE:** Move stop to **${entry:.2f}** (Breakeven)")
 
         # 💬 Smart Coaching (uses cached intraday metrics when available)
         sig = sig_cache.get(sy.upper())
