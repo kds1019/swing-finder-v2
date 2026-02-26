@@ -246,26 +246,91 @@ def apply_mobile_styles():
     }
     
     /* ========== SCROLLBAR STYLING ========== */
-    
+
     ::-webkit-scrollbar {
         width: 8px;
         height: 8px;
     }
-    
+
     ::-webkit-scrollbar-track {
         background: #f1f1f1;
         border-radius: 4px;
     }
-    
+
     ::-webkit-scrollbar-thumb {
         background: #888;
         border-radius: 4px;
     }
-    
+
     ::-webkit-scrollbar-thumb:hover {
         background: #555;
     }
-    
+
+    /* ========== ANALYZER-SPECIFIC MOBILE OPTIMIZATIONS ========== */
+
+    @media only screen and (max-width: 768px) {
+
+        /* Reduce chart margins on mobile */
+        .js-plotly-plot {
+            margin: 0 !important;
+        }
+
+        /* Make plotly charts responsive */
+        .plotly {
+            width: 100% !important;
+            height: auto !important;
+        }
+
+        /* Optimize entry checklist for mobile */
+        .entry-checklist {
+            padding: 12px !important;
+            margin: 8px 0 !important;
+        }
+
+        /* Stack metric columns on mobile */
+        div[data-testid="column"] {
+            min-width: 100% !important;
+            margin-bottom: 8px !important;
+        }
+
+        /* Reduce tab padding on mobile */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 4px !important;
+        }
+
+        /* Make fibonacci levels more readable on mobile */
+        .fib-level {
+            font-size: 14px !important;
+            padding: 8px !important;
+        }
+
+        /* Optimize trade plan section for mobile */
+        .trade-plan {
+            padding: 12px !important;
+            font-size: 14px !important;
+        }
+
+        /* Reduce spacing in expanders on mobile */
+        .streamlit-expanderContent {
+            padding: 8px !important;
+        }
+    }
+
+    /* ========== PERFORMANCE OPTIMIZATIONS ========== */
+
+    /* Reduce animations on mobile for better performance */
+    @media only screen and (max-width: 768px) {
+        * {
+            animation-duration: 0.1s !important;
+            transition-duration: 0.1s !important;
+        }
+
+        /* Disable hover effects on mobile (no hover on touch) */
+        .stButton button:hover {
+            transform: none !important;
+        }
+    }
+
     </style>
     """
     

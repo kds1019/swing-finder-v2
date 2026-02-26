@@ -44,6 +44,31 @@ st.set_page_config(
 apply_mobile_styles()
 add_pwa_meta_tags()
 
+# 🚀 MOBILE OPTIMIZATION: Session Keep-Alive
+# Prevents session timeout when app is in background (e.g., when switching to Webull)
+# This JavaScript pings the server every 30 seconds to keep the session alive
+st.markdown("""
+<script>
+    // Keep session alive by pinging every 30 seconds
+    setInterval(function() {
+        // Send a small request to keep connection alive
+        fetch(window.location.href, {method: 'HEAD'})
+            .catch(err => console.log('Keep-alive ping failed:', err));
+    }, 30000); // 30 seconds
+
+    // Detect mobile device and store in session
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 768;
+    if (isMobile && window.parent) {
+        window.parent.postMessage({type: 'streamlit:setComponentValue', value: {is_mobile: true}}, '*');
+    }
+</script>
+""", unsafe_allow_html=True)
+
+# Store mobile detection in session state
+if "is_mobile" not in st.session_state:
+    # Simple heuristic: check if user agent or screen width suggests mobile
+    st.session_state["is_mobile"] = False  # Will be updated by JavaScript above
+
 # ---------------- Optional: Simple Password Protection ----------------
 # Uncomment this section if you want password protection instead of GitHub OAuth
 # This works better on mobile and avoids GitHub 500 errors
