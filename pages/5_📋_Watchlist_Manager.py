@@ -23,41 +23,96 @@ except:
 st.title("📋 Watchlist Manager")
 st.markdown("**Manage your watchlist with entry/stop/target points for the alert system**")
 
+# Show which Scanner watchlist is being used
+try:
+    gist_id = st.secrets.get("GIST_ID") or os.getenv("GIST_ID")
+    if gist_id:
+        data = load_gist_json(gist_id, "watchlist.json")
+        if isinstance(data, dict):
+            watchlist_names = list(data.keys())
+            active_name = st.session_state.get("active_watchlist", watchlist_names[0] if watchlist_names else "Unnamed")
+
+            st.info(f"📂 **Synced with Scanner Watchlist:** '{active_name}' ({len(data.get(active_name, []))} stocks)")
+            st.caption("💡 Stocks added/removed here will sync with the Scanner page")
+except:
+    pass
+
 # Load watchlist
 def load_watchlist_enhanced():
-    """Load watchlist with entry/stop/target data."""
+    """Load watchlist with entry/stop/target data from Scanner's format."""
     try:
-        # Try loading from Gist first
+        # Try loading from Gist first (Scanner format)
         gist_id = st.secrets.get("GIST_ID") or os.getenv("GIST_ID")
         if gist_id:
             try:
                 data = load_gist_json(gist_id, "watchlist.json")
-                if isinstance(data, list):
-                    # Convert old format (list of symbols) to new format
+
+                # Scanner format: {"Unnamed": ["AAPL", "MSFT"], "Tech": ["NVDA"]}
+                if isinstance(data, dict):
+                    # Get the active watchlist from session state or use first one
+                    active_name = st.session_state.get("active_watchlist")
+
+                    # If no active watchlist, use the first one
+                    if not active_name or active_name not in data:
+                        active_name = list(data.keys())[0] if data else None
+
+                    if active_name and active_name in data:
+                        symbols = data[active_name]
+                        # Convert to enhanced format
+                        return [{'symbol': sym} if isinstance(sym, str) else sym for sym in symbols]
+
+                # Already in enhanced format (list of dicts)
+                elif isinstance(data, list):
                     return [{'symbol': sym} if isinstance(sym, str) else sym for sym in data]
-                elif isinstance(data, dict) and 'symbols' in data:
-                    return data['symbols']
             except:
                 pass
-        
+
         # Fallback to local
         data = load_json("data/watchlist.json", default=[])
-        if isinstance(data, list):
+
+        # Handle Scanner format
+        if isinstance(data, dict):
+            # Get first watchlist
+            first_key = list(data.keys())[0] if data else None
+            if first_key:
+                symbols = data[first_key]
+                return [{'symbol': sym} if isinstance(sym, str) else sym for sym in symbols]
+
+        # Handle enhanced format
+        elif isinstance(data, list):
             return [{'symbol': sym} if isinstance(sym, str) else sym for sym in data]
+
         return []
     except:
         return []
 
 def save_watchlist_enhanced(watchlist):
-    """Save watchlist to both local and Gist."""
-    # Save locally
-    save_json(watchlist, "data/watchlist.json")
-    
-    # Save to Gist
+    """Save watchlist maintaining compatibility with Scanner format."""
+    # Save enhanced data locally (for alerts system)
+    save_json(watchlist, "data/watchlist_enhanced.json")
+
+    # Also update Scanner's format in Gist
     gist_id = st.secrets.get("GIST_ID") or os.getenv("GIST_ID")
     if gist_id:
         try:
-            save_gist_json(gist_id, "watchlist.json", watchlist)
+            # Load existing Scanner watchlists
+            existing_data = load_gist_json(gist_id, "watchlist.json")
+
+            # If it's Scanner format (dict), update the active watchlist
+            if isinstance(existing_data, dict):
+                active_name = st.session_state.get("active_watchlist")
+                if not active_name:
+                    active_name = list(existing_data.keys())[0] if existing_data else "Unnamed"
+
+                # Extract just symbols for Scanner compatibility
+                symbols = [item.get('symbol') if isinstance(item, dict) else item for item in watchlist]
+                existing_data[active_name] = symbols
+
+                # Save back to Gist in Scanner format
+                save_gist_json(gist_id, "watchlist.json", existing_data)
+            else:
+                # Save in enhanced format
+                save_gist_json(gist_id, "watchlist.json", watchlist)
         except:
             pass
 

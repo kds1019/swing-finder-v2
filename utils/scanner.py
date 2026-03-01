@@ -47,18 +47,32 @@ def load_watchlist_with_entries() -> List[Dict[str, Any]]:
     Returns list of dicts with symbol and trade plan.
     """
     try:
+        # Try loading enhanced watchlist first (has entry/stop/target data)
+        watchlist = load_json("data/watchlist_enhanced.json", default=[])
+
+        if watchlist and isinstance(watchlist, list):
+            return watchlist
+
+        # Fallback to regular watchlist.json (Scanner format)
         watchlist = load_json("data/watchlist.json", default=[])
-        
-        # Ensure it's a list
+
+        # Handle Scanner format (dict of named watchlists)
         if isinstance(watchlist, dict):
-            watchlist = watchlist.get('symbols', [])
-        
-        # Convert to list of dicts if it's just a list of symbols
-        if watchlist and isinstance(watchlist[0], str):
-            watchlist = [{'symbol': sym} for sym in watchlist]
-        
-        return watchlist
-        
+            # Get first watchlist or 'Unnamed'
+            first_key = list(watchlist.keys())[0] if watchlist else None
+            if first_key:
+                symbols = watchlist[first_key]
+                return [{'symbol': sym} if isinstance(sym, str) else sym for sym in symbols]
+
+        # Handle list format
+        elif isinstance(watchlist, list):
+            # Convert to list of dicts if it's just a list of symbols
+            if watchlist and isinstance(watchlist[0], str):
+                return [{'symbol': sym} for sym in watchlist]
+            return watchlist
+
+        return []
+
     except Exception as e:
         logger.warning(f"Error loading watchlist: {e}")
         return []
