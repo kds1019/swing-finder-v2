@@ -7,7 +7,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, time
 from typing import List, Dict, Any
-from utils.tiingo_api import fetch_tiingo_realtime_quote, get_cached_stock_data
+from utils.tiingo_api import fetch_tiingo_realtime_quote, tiingo_history
 from utils.alerts import send_premarket_alert, send_breakout_alert
 from utils.storage import load_json
 from utils.logger import get_logger
@@ -83,7 +83,7 @@ def check_premarket_gaps(TIINGO_TOKEN: str, gap_threshold: float = 2.0) -> List[
         
         try:
             # Get historical data for previous close
-            df = get_cached_stock_data(symbol, TIINGO_TOKEN, days=5)
+            df = tiingo_history(symbol, TIINGO_TOKEN, days=5)
             if df is None or df.empty:
                 continue
             
@@ -169,7 +169,7 @@ def check_breakouts(TIINGO_TOKEN: str) -> List[Dict[str, Any]]:
             # Check if entry triggered (price >= entry)
             if current_price >= entry_price:
                 # Get volume data
-                df = get_cached_stock_data(symbol, TIINGO_TOKEN, days=20)
+                df = tiingo_history(symbol, TIINGO_TOKEN, days=20)
                 volume_ratio = None
                 
                 if df is not None and not df.empty and 'Volume' in df.columns:
