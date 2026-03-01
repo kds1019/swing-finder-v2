@@ -398,3 +398,108 @@ def fetch_yf_premarket(symbol: str):
     except Exception as e:
         print(f"⚠️ YF premarket fetch failed for {symbol}: {e}")
         return None
+
+
+# ---------------------------------------------------------------------------
+# 🔹 Institutional Ownership Data (Tiingo Power Plan)
+# ---------------------------------------------------------------------------
+@st.cache_data(ttl=86400)  # Cache for 24 hours
+def fetch_institutional_ownership(symbol: str, token: str) -> dict:
+    """
+    Fetch institutional ownership data from Tiingo fundamentals endpoint.
+    Returns top holders and ownership statistics.
+    """
+    url = f"https://api.tiingo.com/tiingo/fundamentals/{symbol.lower()}/ownership"
+    headers = {"Authorization": f"Token {token}"}
+
+    try:
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.ok:
+            data = r.json()
+            if data:
+                logger.info(f"✅ Institutional ownership fetched for {symbol}")
+                return data
+    except Exception as e:
+        logger.warning(f"fetch_institutional_ownership({symbol}) error: {e}")
+
+    return {}
+
+
+# ---------------------------------------------------------------------------
+# 🔹 Volume Profile Analysis
+# ---------------------------------------------------------------------------
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def calculate_volume_profile(df: pd.DataFrame, num_bins: int = 20) -> dict:
+    """
+    Calculate volume profile from price data.
+    Returns volume distribution across price levels.
+
+    Args:
+        df: DataFrame with 'Close' and 'Volume' columns
+        num_bins: Number of price bins to create
+
+    Returns:
+        dict with volume profile data including POC and Value Area
+    """
+    if df is None or df.empty or 'Close' not in df.columns or 'Volume' not in df.columns:
+        return {}
+
+    try:
+        # Get price range
+        price_min = df['Close'].min()
+        price_max = df['Close'].max()
+
+        # Create price bins
+        bins = pd.cut(df['Close'], bins=num_bins, include_lowest=True)
+
+        # Sum volume for each price bin
+        volume_by_price = df.groupby(bins)['Volume'].sum().sort_index()
+
+        # Get bin midpoints for display
+        price_levels = [(interval.left + interval.right) / 2 for interval in volume_by_price.index]
+        volumes = volume_by_price.values
+
+        # Find Point of Control (POC) - price level with highest volume
+        poc_idx = volumes.argmax()
+        poc_price = price_levels[poc_idx]
+        poc_volume = volumes[poc_idx]
+
+        # Calculate Value Area (70% of volume)
+        total_volume = volumes.sum()
+        target_volume = total_volume * 0.70
+
+        # Start from POC and expand outward
+        sorted_indices = volumes.argsort()[::-1]
+        cumulative_volume = 0
+        value_area_indices = []
+
+        for idx in sorted_indices:
+            value_area_indices.append(idx)
+            cumulative_volume += volumes[idx]
+            if cumulative_volume >= target_volume:
+                break
+
+        value_area_high = max([price_levels[i] for i in value_area_indices])
+        value_area_low = min([price_levels[i] for i in value_area_indices])
+
+        # Find high volume nodes (HVN) - top 50% of max volume
+        volume_threshold = volumes.max() * 0.5
+        hvn_indices = [i for i, v in enumerate(volumes) if v >= volume_threshold]
+        hvn_levels = [(price_levels[i], volumes[i]) for i in hvn_indices]
+
+        logger.info(f"✅ Volume profile calculated: POC=${poc_price:.2f}, VA=${value_area_low:.2f}-${value_area_high:.2f}")
+
+        return {
+            'price_levels': price_levels,
+            'volumes': volumes.tolist(),
+            'poc_price': poc_price,
+            'poc_volume': poc_volume,
+            'value_area_high': value_area_high,
+            'value_area_low': value_area_low,
+            'hvn_levels': hvn_levels,
+            'total_volume': total_volume
+        }
+
+    except Exception as e:
+        logger.warning(f"calculate_volume_profile error: {e}")
+        return {}

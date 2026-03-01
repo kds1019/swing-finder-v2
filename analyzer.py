@@ -92,27 +92,92 @@ def calculate_cached_indicators(df: pd.DataFrame):
 
     return df
 
-def _render_entry_coaching(symbol: str, setup_type: str, indicators: dict, notes: str = ""):
-    """Show the entry coaching prompt with one-click copy (matches Active Trades style)."""
-    # Build the prompt
-    prompt_text = (
-        f"You are a swing-trading coach. Provide educational coaching only; no financial advice.\n\n"
-        f"Symbol: {symbol}\n"
-        f"Setup type: {setup_type}\n"
-        f"Indicators: {indicators}\n"
-        f"Notes: {notes or '-'}\n\n"
-        "Use fresh, live market data from Yahoo Finance to evaluate entry conditions. "
-        "Coach me on timing, confirmation, and risk management."
-    )
+def _render_entry_coaching(symbol: str, setup_type: str, indicators: dict, notes: str = "",
+                          entry: float = None, stop: float = None, target: float = None):
+    """Show the entry coaching prompt with one-click copy - optimized for Claude AI."""
 
-    # Display copy button and code block
-    copy_col, _ = st.columns([1, 8])
-    if copy_col.button("📋 Copy Prompt", key=f"copy_prompt_{symbol}"):
-        st.session_state["copied_prompt"] = prompt_text
-        st.toast("✅ Prompt copied! Paste it directly into ChatGPT.")
+    # Calculate risk/reward if all values present
+    rr_text = ""
+    if entry and stop and target:
+        risk_pct = abs((entry - stop) / entry) * 100
+        reward_pct = abs((target - entry) / entry) * 100
+        rr_ratio = reward_pct / risk_pct if risk_pct > 0 else 0
+        rr_text = f"""
+🎯 MY TRADE PLAN:
+- Entry: ${entry:.2f}
+- Stop Loss: ${stop:.2f}
+- Target: ${target:.2f}
+- Risk: {risk_pct:.1f}% | Reward: {reward_pct:.1f}% | R:R: {rr_ratio:.2f}:1
+"""
+
+    # Build Claude-optimized prompt
+    prompt_text = f"""Act as my swing trading coach. Focus on education and risk management.
+
+📊 STOCK DATA:
+Symbol: {symbol}
+Current Price: ${indicators.get('current_price', 'N/A')}
+Setup: {setup_type}
+
+📈 TECHNICAL INDICATORS:
+- RSI: {indicators.get('rsi', 'N/A')}
+- EMA20: ${indicators.get('ema20', 'N/A'):.2f} (Price {'above ✅' if indicators.get('price_above_ema20') else 'below ❌'})
+- EMA50: ${indicators.get('ema50', 'N/A'):.2f} (Trend: {'Up ✅' if indicators.get('ema20_above_ema50') else 'Down ❌'})
+- Volume: {indicators.get('volume_ratio', 'N/A')}x average
+- ATR: {indicators.get('atr', 'N/A')}
+- Pattern: {indicators.get('pattern', 'None detected')}
+{rr_text}
+❓ COACHING QUESTIONS:
+1. Is this entry timing optimal or should I wait for better confirmation?
+2. What specific signals should I look for before entering?
+3. What could invalidate this setup (red flags)?
+4. How should I manage this trade (position sizing, scaling, trailing stop)?
+5. What's the probability of success based on current market conditions?
+
+📋 INSTRUCTIONS:
+- Use live market data from Yahoo Finance or TradingView to validate my analysis
+- Be specific and actionable (not generic advice)
+- Point out any flaws in my plan
+- Suggest improvements to my risk management
+- Rate this setup 1-10 and explain why
+
+Notes: {notes or 'None'}
+
+Remember: I'm looking for COACHING to improve my skills, not just trade validation.
+"""
+
+    # Display copy buttons for both ChatGPT and Claude
+    col1, col2, _ = st.columns([1, 1, 6])
+
+    with col1:
+        if st.button("📋 Copy for ChatGPT", key=f"copy_chatgpt_{symbol}"):
+            # Simpler version for ChatGPT
+            simple_prompt = (
+                f"You are a swing-trading coach. Provide educational coaching only; no financial advice.\n\n"
+                f"Symbol: {symbol}\n"
+                f"Setup type: {setup_type}\n"
+                f"Indicators: {indicators}\n"
+                f"Notes: {notes or '-'}\n\n"
+                "Use fresh, live market data from Yahoo Finance to evaluate entry conditions. "
+                "Coach me on timing, confirmation, and risk management."
+            )
+            st.session_state["copied_prompt"] = simple_prompt
+            st.toast("✅ ChatGPT prompt copied!")
+
+    with col2:
+        if st.button("📋 Copy for Claude", key=f"copy_claude_{symbol}"):
+            st.session_state["copied_prompt"] = prompt_text
+            st.toast("✅ Claude prompt copied! (Optimized format)")
 
     # Display the prompt text for manual viewing/copying
+    st.caption("**Claude AI Optimized Prompt** (structured for better responses)")
     st.code(prompt_text, language="markdown")
+
+    # Add quick links
+    col_link1, col_link2 = st.columns(2)
+    with col_link1:
+        st.markdown("[🔗 Open ChatGPT](https://chat.openai.com)")
+    with col_link2:
+        st.markdown("[🔗 Open Claude](https://claude.ai)")
 
 # ===================== MOBILE OPTIMIZATION: CONFIGURATION =====================
 def is_mobile():
@@ -337,6 +402,41 @@ def analyzer_ui(TIINGO_TOKEN):
                 st.metric("Next Earnings", earnings_date)
             else:
                 st.metric("Next Earnings", "Not Scheduled")
+
+        # ===================== PRE-MARKET DISPLAY (TIINGO POWER PLAN) =====================
+        # Show pre-market price if before market open
+        from datetime import datetime, time as dt_time
+        from utils.tiingo_api import fetch_tiingo_realtime_quote
+
+        now = datetime.now()
+        current_time = now.time()
+        is_weekday = now.weekday() < 5
+        is_premarket = is_weekday and dt_time(4, 0) <= current_time < dt_time(9, 30)
+
+        if is_premarket:
+            try:
+                pm_quote = fetch_tiingo_realtime_quote(symbol, TIINGO_TOKEN)
+                pm_price = pm_quote.get('last') or pm_quote.get('tngoLast')
+
+                if pm_price:
+                    prev_close = df['Close'].iloc[-1]
+                    pm_change = ((pm_price - prev_close) / prev_close) * 100
+
+                    st.divider()
+
+                    if abs(pm_change) >= 2.0:
+                        st.warning(f"""
+                        🌅 **PRE-MARKET ALERT**
+                        - **Current:** ${pm_price:.2f}
+                        - **Change:** {pm_change:+.2f}%
+                        - **Previous Close:** ${prev_close:.2f}
+
+                        {'🚀 **Gapping UP** - Consider adjusting entry higher' if pm_change > 0 else '⚠️ **Gapping DOWN** - Re-evaluate setup'}
+                        """)
+                    else:
+                        st.info(f"🌅 **Pre-Market:** ${pm_price:.2f} ({pm_change:+.2f}%)")
+            except Exception as e:
+                pass  # Silently fail if pre-market data unavailable
 
         # ===================== ENTRY CHECKLIST (PRIORITY #1) =====================
         st.divider()
@@ -1086,6 +1186,121 @@ def analyzer_ui(TIINGO_TOKEN):
                         st.warning("Could not fetch SPY data for correlation analysis")
                 except Exception as e:
                     st.warning(f"Correlation analysis unavailable: {e}")
+
+            # ===================== Institutional Ownership (TIINGO POWER PLAN) =====================
+            with st.expander("🏦 Institutional Ownership", expanded=False):
+                st.caption("See which institutions own this stock and recent changes")
+
+                try:
+                    from utils.tiingo_api import fetch_institutional_ownership
+
+                    ownership_data = fetch_institutional_ownership(symbol, TIINGO_TOKEN)
+
+                    if ownership_data and isinstance(ownership_data, list) and len(ownership_data) > 0:
+                        # Get latest ownership data
+                        latest = ownership_data[0] if isinstance(ownership_data, list) else ownership_data
+
+                        # Display summary
+                        st.markdown("### Top Institutional Holders")
+
+                        # Create table of top holders
+                        if 'holders' in latest:
+                            holders = latest['holders'][:10]  # Top 10
+
+                            for i, holder in enumerate(holders, 1):
+                                name = holder.get('name', 'Unknown')
+                                shares = holder.get('shares', 0)
+                                value = holder.get('value', 0)
+                                pct = holder.get('percentHeld', 0)
+
+                                col1, col2, col3 = st.columns([3, 2, 2])
+                                with col1:
+                                    st.markdown(f"**{i}. {name}**")
+                                with col2:
+                                    st.markdown(f"{shares/1e6:.1f}M shares")
+                                with col3:
+                                    st.markdown(f"{pct:.2f}%")
+
+                        # Total institutional ownership
+                        total_inst = latest.get('totalInstitutional', 0)
+                        if total_inst > 0:
+                            st.info(f"📊 **Total Institutional Ownership:** {total_inst:.1f}%")
+
+                            if total_inst > 60:
+                                st.success("✅ High institutional ownership - Smart money is invested")
+                            elif total_inst > 40:
+                                st.info("ℹ️ Moderate institutional ownership")
+                            else:
+                                st.warning("⚠️ Low institutional ownership - Less institutional interest")
+                    else:
+                        st.info("Institutional ownership data not available for this ticker")
+
+                except Exception as e:
+                    st.info(f"Institutional ownership data not available: {e}")
+
+            # ===================== Volume Profile Analysis =====================
+            with st.expander("📊 Volume Profile", expanded=False):
+                st.caption("See where the most trading volume occurred at different price levels")
+
+                try:
+                    from utils.tiingo_api import calculate_volume_profile
+
+                    # Calculate volume profile for last 30 days
+                    df_vp = df.tail(30).copy()
+                    vp_data = calculate_volume_profile(df_vp, num_bins=15)
+
+                    if vp_data and 'price_levels' in vp_data:
+                        # Display key levels
+                        col_vp1, col_vp2, col_vp3 = st.columns(3)
+
+                        with col_vp1:
+                            poc_price = vp_data['poc_price']
+                            st.metric("Point of Control (POC)", f"${poc_price:.2f}")
+                            st.caption("Price with highest volume")
+
+                        with col_vp2:
+                            va_high = vp_data['value_area_high']
+                            va_low = vp_data['value_area_low']
+                            st.metric("Value Area", f"${va_low:.2f} - ${va_high:.2f}")
+                            st.caption("70% of volume traded here")
+
+                        with col_vp3:
+                            current_price = df['Close'].iloc[-1]
+                            if current_price > va_high:
+                                st.info("📈 Above Value Area")
+                            elif current_price < va_low:
+                                st.info("📉 Below Value Area")
+                            else:
+                                st.success("✅ Inside Value Area")
+
+                        # High Volume Nodes
+                        if 'hvn_levels' in vp_data and vp_data['hvn_levels']:
+                            st.markdown("### High Volume Nodes (Strong Support/Resistance)")
+
+                            for price, volume in vp_data['hvn_levels'][:5]:  # Top 5
+                                distance = ((price - current_price) / current_price) * 100
+                                level_type = "Resistance" if price > current_price else "Support"
+
+                                st.markdown(f"- **${price:.2f}** ({level_type}) - {distance:+.1f}% from current")
+
+                        # Interpretation
+                        st.markdown("### 💡 Interpretation")
+                        if current_price > poc_price:
+                            st.markdown(f"- Price is **above POC** (${poc_price:.2f}) - Bullish positioning")
+                        else:
+                            st.markdown(f"- Price is **below POC** (${poc_price:.2f}) - Bearish positioning")
+
+                        if va_low <= current_price <= va_high:
+                            st.markdown("- Price is **inside Value Area** - Fair value zone")
+                        elif current_price > va_high:
+                            st.markdown("- Price is **above Value Area** - Potentially overextended")
+                        else:
+                            st.markdown("- Price is **below Value Area** - Potentially oversold")
+                    else:
+                        st.info("Volume profile data not available")
+
+                except Exception as e:
+                    st.info(f"Volume profile analysis not available: {e}")
 
         # ===================== TAB 3: ML/AI ANALYSIS =====================
         with tab3:

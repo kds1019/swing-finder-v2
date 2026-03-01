@@ -347,3 +347,305 @@ def get_alert_history(limit: int = 50) -> List[Dict[str, Any]]:
         return []
     return log[-limit:]
 
+
+def send_premarket_alert(symbol: str, current_price: float, prev_close: float,
+                         change_pct: float, setup_type: str = None, entry: float = None) -> bool:
+    """
+    Send pre-market gap alert to user's email.
+    Perfect for morning checks before market open.
+    """
+    try:
+        user_email = st.secrets.get("USER_EMAIL")
+        if not user_email:
+            return False
+
+        gap_direction = "UP 🚀" if change_pct > 0 else "DOWN ⚠️"
+
+        subject = f"🌅 Pre-Market Alert: {symbol} Gapping {gap_direction}"
+
+        # Plain text body
+        body = f"""SwingFinder Pre-Market Alert
+Time: {datetime.now().strftime('%I:%M %p ET')}
+
+Symbol: {symbol}
+Current Price: ${current_price:.2f}
+Previous Close: ${prev_close:.2f}
+Change: {change_pct:+.2f}%
+
+"""
+
+        if setup_type and entry:
+            body += f"""Your Setup: {setup_type}
+Entry Point: ${entry:.2f}
+Status: {'⚠️ Entry may need adjustment' if abs(change_pct) > 2 else '✅ Setup still valid'}
+
+"""
+
+        body += """Action: Open SwingFinder to review setup
+Link: https://swing-finder-v2.streamlit.app
+
+---
+SwingFinder Alert System
+"""
+
+        # HTML body for better formatting
+        html_body = f"""
+<html>
+<body style="font-family: Arial, sans-serif; padding: 20px; background-color: #f5f5f5;">
+    <div style="max-width: 600px; margin: 0 auto; background-color: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+
+        <div style="background: linear-gradient(135deg, {'#00cc00' if change_pct > 0 else '#cc0000'} 0%, {'#00aa00' if change_pct > 0 else '#aa0000'} 100%); padding: 20px; color: white;">
+            <h2 style="margin: 0; font-size: 24px;">🌅 Pre-Market Alert</h2>
+            <h1 style="margin: 10px 0 0 0; font-size: 32px;">{symbol}</h1>
+        </div>
+
+        <div style="padding: 20px;">
+            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+                <p style="margin: 5px 0; color: #666;"><strong>Time:</strong> {datetime.now().strftime('%I:%M %p ET')}</p>
+                <p style="margin: 5px 0;"><strong>Current Price:</strong> ${current_price:.2f}</p>
+                <p style="margin: 5px 0;"><strong>Previous Close:</strong> ${prev_close:.2f}</p>
+                <p style="margin: 5px 0; font-size: 20px; color: {'#00cc00' if change_pct > 0 else '#cc0000'};">
+                    <strong>Change:</strong> {change_pct:+.2f}%
+                </p>
+            </div>
+
+            {'<div style="background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin-bottom: 15px; border-left: 4px solid #2196F3;">' +
+             f'<p style="margin: 5px 0;"><strong>Your Setup:</strong> {setup_type}</p>' +
+             f'<p style="margin: 5px 0;"><strong>Entry Point:</strong> ${entry:.2f}</p>' +
+             f'<p style="margin: 5px 0;"><strong>Status:</strong> {"⚠️ Entry may need adjustment" if abs(change_pct) > 2 else "✅ Setup still valid"}</p>' +
+             '</div>' if setup_type and entry else ''}
+
+            <div style="text-align: center; margin-top: 20px;">
+                <a href="https://swing-finder-v2.streamlit.app"
+                   style="display: inline-block; background-color: #4CAF50; color: white; padding: 12px 30px;
+                          text-decoration: none; border-radius: 5px; font-size: 16px; font-weight: bold;">
+                    Open SwingFinder
+                </a>
+            </div>
+        </div>
+
+        <div style="background-color: #f8f9fa; padding: 15px; text-align: center; border-top: 1px solid #ddd;">
+            <p style="margin: 0; color: #666; font-size: 12px;">SwingFinder Alert System</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+        success = send_email_alert(user_email, subject, body, html_body)
+
+        if success:
+            log_alert_trigger(f"premarket_{symbol}", symbol, f"Pre-market gap {change_pct:+.2f}%")
+
+        return success
+
+    except Exception as e:
+        print(f"❌ Pre-market alert failed: {e}")
+        return False
+
+
+def send_breakout_alert(symbol: str, current_price: float, entry_price: float,
+                        setup_type: str, stop: float, target: float,
+                        volume_ratio: float = None, notes: str = None) -> bool:
+    """
+    Send breakout/entry triggered alert to user's email.
+    Perfect for when you're away from the app during market hours.
+    """
+    try:
+        user_email = st.secrets.get("USER_EMAIL")
+        if not user_email:
+            return False
+
+        subject = f"🚨 ENTRY TRIGGERED: {symbol} @ ${current_price:.2f}"
+
+        # Calculate risk/reward
+        risk_pct = abs((entry_price - stop) / entry_price) * 100
+        reward_pct = abs((target - entry_price) / entry_price) * 100
+        rr_ratio = reward_pct / risk_pct if risk_pct > 0 else 0
+
+        # Plain text body
+        body = f"""SwingFinder Breakout Alert!
+Time: {datetime.now().strftime('%I:%M %p ET')}
+
+🚨 ENTRY POINT TRIGGERED 🚨
+
+Symbol: {symbol}
+Current Price: ${current_price:.2f}
+Your Entry: ${entry_price:.2f} ✅
+
+Setup: {setup_type}
+Stop Loss: ${stop:.2f}
+Target: ${target:.2f}
+
+Risk: {risk_pct:.1f}%
+Reward: {reward_pct:.1f}%
+R:R Ratio: {rr_ratio:.2f}:1
+
+"""
+
+        if volume_ratio:
+            body += f"Volume: {volume_ratio:.1f}x average\n\n"
+
+        if notes:
+            body += f"Notes: {notes}\n\n"
+
+        body += """Action: Open SwingFinder to execute trade
+Link: https://swing-finder-v2.streamlit.app
+
+---
+SwingFinder Alert System
+"""
+
+        # HTML body
+        html_body = f"""
+<html>
+<body style="font-family: Arial, sans-serif; padding: 20px; background-color: #f5f5f5;">
+    <div style="max-width: 600px; margin: 0 auto; background-color: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+
+        <div style="background: linear-gradient(135deg, #ff6600 0%, #ff4400 100%); padding: 20px; color: white;">
+            <h2 style="margin: 0; font-size: 24px;">🚨 ENTRY TRIGGERED</h2>
+            <h1 style="margin: 10px 0 0 0; font-size: 32px;">{symbol}</h1>
+        </div>
+
+        <div style="padding: 20px;">
+            <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin-bottom: 15px; border-left: 4px solid #ff6600;">
+                <p style="margin: 5px 0; color: #666;"><strong>Time:</strong> {datetime.now().strftime('%I:%M %p ET')}</p>
+                <p style="margin: 5px 0; font-size: 24px; color: #ff6600;">
+                    <strong>Price: ${current_price:.2f}</strong>
+                </p>
+            </div>
+
+            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+                <h3 style="margin: 0 0 10px 0; color: #333;">Trade Details</h3>
+                <p style="margin: 5px 0;"><strong>Setup:</strong> {setup_type}</p>
+                <p style="margin: 5px 0;"><strong>Entry:</strong> ${entry_price:.2f} ✅</p>
+                <p style="margin: 5px 0;"><strong>Stop Loss:</strong> ${stop:.2f}</p>
+                <p style="margin: 5px 0;"><strong>Target:</strong> ${target:.2f}</p>
+                {'<p style="margin: 5px 0;"><strong>Volume:</strong> ' + f'{volume_ratio:.1f}x average</p>' if volume_ratio else ''}
+                {'<p style="margin: 5px 0;"><strong>Notes:</strong> ' + notes + '</p>' if notes else ''}
+            </div>
+
+            <div style="background-color: #e8f5e9; padding: 15px; border-radius: 5px; margin-bottom: 15px; border-left: 4px solid #4CAF50;">
+                <h3 style="margin: 0 0 10px 0; color: #333;">Risk/Reward Analysis</h3>
+                <p style="margin: 5px 0;"><strong>Risk:</strong> {risk_pct:.1f}%</p>
+                <p style="margin: 5px 0;"><strong>Reward:</strong> {reward_pct:.1f}%</p>
+                <p style="margin: 5px 0; font-size: 20px; color: #00cc00;">
+                    <strong>R:R Ratio:</strong> {rr_ratio:.2f}:1
+                </p>
+            </div>
+
+            <div style="text-align: center; margin-top: 20px;">
+                <a href="https://swing-finder-v2.streamlit.app"
+                   style="display: inline-block; background-color: #ff6600; color: white; padding: 15px 40px;
+                          text-decoration: none; border-radius: 5px; font-size: 18px; font-weight: bold;">
+                    Open SwingFinder Now
+                </a>
+            </div>
+        </div>
+
+        <div style="background-color: #f8f9fa; padding: 15px; text-align: center; border-top: 1px solid #ddd;">
+            <p style="margin: 0; color: #666; font-size: 12px;">SwingFinder Alert System</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+        success = send_email_alert(user_email, subject, body, html_body)
+
+        if success:
+            log_alert_trigger(f"breakout_{symbol}", symbol, f"Entry triggered @ ${current_price:.2f}")
+
+        return success
+
+    except Exception as e:
+        print(f"❌ Breakout alert failed: {e}")
+        return False
+
+
+def send_daily_summary(watchlist_summary: List[Dict[str, Any]]) -> bool:
+    """
+    Send end-of-day summary of watchlist performance.
+    Perfect for after-market review.
+    """
+    try:
+        user_email = st.secrets.get("USER_EMAIL")
+        if not user_email:
+            return False
+
+        subject = f"📊 Daily Summary - {datetime.now().strftime('%B %d, %Y')}"
+
+        # Plain text body
+        body = f"""SwingFinder Daily Summary
+Date: {datetime.now().strftime('%B %d, %Y')}
+
+WATCHLIST PERFORMANCE:
+
+"""
+
+        for stock in watchlist_summary:
+            body += f"""
+{stock['symbol']}: {stock['change_pct']:+.2f}%
+  Price: ${stock['close']:.2f}
+  Status: {stock['status']}
+"""
+
+        body += """
+---
+SwingFinder Alert System
+"""
+
+        # HTML body
+        html_body = f"""
+<html>
+<body style="font-family: Arial, sans-serif; padding: 20px; background-color: #f5f5f5;">
+    <div style="max-width: 600px; margin: 0 auto; background-color: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; color: white;">
+            <h2 style="margin: 0; font-size: 24px;">📊 Daily Summary</h2>
+            <p style="margin: 5px 0 0 0; font-size: 16px;">{datetime.now().strftime('%B %d, %Y')}</p>
+        </div>
+
+        <div style="padding: 20px;">
+            <h3 style="margin: 0 0 15px 0; color: #333;">Watchlist Performance</h3>
+"""
+
+        for stock in watchlist_summary:
+            color = '#00cc00' if stock['change_pct'] > 0 else '#cc0000'
+            html_body += f"""
+            <div style="background-color: #f8f9fa; padding: 12px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid {color};">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong style="font-size: 18px;">{stock['symbol']}</strong>
+                        <p style="margin: 5px 0; color: #666;">{stock['status']}</p>
+                    </div>
+                    <div style="text-align: right;">
+                        <p style="margin: 0; font-size: 18px; color: {color};">{stock['change_pct']:+.2f}%</p>
+                        <p style="margin: 5px 0; color: #666;">${stock['close']:.2f}</p>
+                    </div>
+                </div>
+            </div>
+"""
+
+        html_body += """
+        </div>
+
+        <div style="background-color: #f8f9fa; padding: 15px; text-align: center; border-top: 1px solid #ddd;">
+            <p style="margin: 0; color: #666; font-size: 12px;">SwingFinder Alert System</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+        success = send_email_alert(user_email, subject, body, html_body)
+
+        if success:
+            log_alert_trigger("daily_summary", "WATCHLIST", "Daily summary sent")
+
+        return success
+
+    except Exception as e:
+        print(f"❌ Daily summary failed: {e}")
+        return False
+
