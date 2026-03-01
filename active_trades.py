@@ -1264,7 +1264,7 @@ def _build_ai_prompt(row: Dict[str, Any], sig: IntradaySignals | None, intraday_
             bits.append(f"Vol× {sig.vol_ratio:.2f}")
         sig_str = " | ".join(bits)
 
-    # --- Updated version with Yahoo Finance instruction ---
+    # --- ChatGPT version (simple) ---
     return (
         "You are a swing-trading coach. Provide educational coaching only — no financial advice.\n\n"
         f"Symbol: {sy}\n"
@@ -1280,6 +1280,74 @@ def _build_ai_prompt(row: Dict[str, Any], sig: IntradaySignals | None, intraday_
         "- realistic next steps for the current context,\n"
         "- what to watch for next technically and emotionally."
     )
+
+
+def _build_ai_prompt_claude(row: Dict[str, Any], sig: IntradaySignals | None, intraday_text: str) -> str:
+    """Create a Claude-optimized prompt with structured format."""
+    sy = (row.get("symbol") or "").upper()
+    entry = row.get("entry")
+    stop = row.get("stop")
+    target = row.get("target")
+    shares = row.get("shares")
+    last = row.get("last_price")
+    rr = row.get("rr")
+    unr = row.get("unrealized_r")
+    prog = row.get("progress_to_target", 0)
+    dist = row.get("distance_from_stop", 0)
+    notes = row.get("notes", "")
+
+    # Calculate percentages
+    prog_pct = prog * 100 if prog else 0
+    dist_pct = dist * 100 if dist else 0
+
+    # Build intraday signals section
+    intraday_section = ""
+    if sig and sig.lookback_ok:
+        intraday_section = f"""
+📊 INTRADAY SIGNALS (Last Hour):
+- RSI: {sig.rsi:.0f if sig.rsi else 'N/A'}
+- Trend: {'EMA20 > EMA50 ✅' if sig.ema_fast_above_slow else 'EMA20 < EMA50 ⚠️'}
+- EMA20: {'Rising ✅' if sig.ema_slope_up else 'Falling ⚠️'}
+- Volume: {f'{sig.vol_ratio:.2f}x average' if sig.vol_ratio else 'N/A'}
+"""
+
+    return f"""Act as my swing trading coach for an ACTIVE POSITION. Focus on risk management and exit strategy.
+
+📈 ACTIVE TRADE:
+Symbol: {sy}
+Shares: {shares}
+Current Price: ${last:.2f if last else 'N/A'}
+
+🎯 ORIGINAL PLAN:
+- Entry: ${entry:.2f if entry else 'N/A'}
+- Stop Loss: ${stop:.2f if stop else 'N/A'}
+- Target: ${target:.2f if target else 'N/A'}
+- Planned R:R: {rr:.2f if rr else 'N/A'}:1
+
+📊 CURRENT STATUS:
+- Unrealized R: {unr:.2f if unr else 'N/A'}R
+- Progress to Target: {prog_pct:.1f}%
+- Distance from Stop: {dist_pct:.1f}%
+{intraday_section}
+💭 MY NOTES:
+{notes or 'None'}
+
+❓ COACHING QUESTIONS:
+1. Should I hold, scale out, or exit completely based on current price action?
+2. Where should I move my stop loss (if at all)?
+3. What are the key levels to watch for next move?
+4. What could invalidate this trade (exit signals)?
+5. How should I manage this emotionally (avoid panic/greed)?
+
+📋 INSTRUCTIONS:
+- Fetch LIVE price data from Yahoo Finance before analyzing
+- Be specific about price levels and actions
+- Consider both technical and psychological aspects
+- Rate the current risk level (Low/Medium/High)
+- Suggest concrete next steps
+
+Remember: I'm in this trade NOW and need actionable guidance, not generic advice.
+"""
 
 
 
@@ -1489,16 +1557,31 @@ def _render_open_positions(rows: List[Dict[str, Any]]) -> None:
 
             # Coaching Request (with intraday signals)
             st.markdown("**🧠 Coaching Request**")
-            sig_dict = None
-            if sig:
-                sig_dict = {
-                    "rsi": sig.rsi,
-                    "ema_fast_above_slow": sig.ema_fast_above_slow,
-                    "vol_ratio": sig.vol_ratio
-                }
-            coaching_prompt = build_coaching_request_for_gpt(enhanced_trade_data, sig_dict)
-            st.text_area("Copy Coaching Request:", value=coaching_prompt, height=250, key=f"coach_area_{sy}")
-            st.caption("Select all (Ctrl+A) and copy (Ctrl+C)")
+
+            # Tabs for ChatGPT vs Claude
+            coach_tab1, coach_tab2 = st.tabs(["ChatGPT", "Claude (Optimized)"])
+
+            with coach_tab1:
+                sig_dict = None
+                if sig:
+                    sig_dict = {
+                        "rsi": sig.rsi,
+                        "ema_fast_above_slow": sig.ema_fast_above_slow,
+                        "vol_ratio": sig.vol_ratio
+                    }
+                coaching_prompt = build_coaching_request_for_gpt(enhanced_trade_data, sig_dict)
+                st.text_area("Copy ChatGPT Prompt:", value=coaching_prompt, height=250, key=f"coach_chatgpt_{sy}")
+                st.caption("Select all (Ctrl+A) and copy (Ctrl+C)")
+                st.markdown("[🔗 Open ChatGPT](https://chat.openai.com)")
+
+            with coach_tab2:
+                # Get intraday text from cache
+                intraday_text = intraday_cache.get(sy.upper(), "")
+                claude_prompt = _build_ai_prompt_claude(r, sig, intraday_text)
+                st.text_area("Copy Claude Prompt:", value=claude_prompt, height=300, key=f"coach_claude_{sy}")
+                st.caption("Select all (Ctrl+A) and copy (Ctrl+C)")
+                st.markdown("[🔗 Open Claude](https://claude.ai)")
+                st.info("💡 Claude provides more structured, actionable coaching for active trades")
 
             # Trade Plan (for reference)
             st.markdown("---")
