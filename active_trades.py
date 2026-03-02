@@ -1303,12 +1303,17 @@ def _build_ai_prompt_claude(row: Dict[str, Any], sig: IntradaySignals | None, in
     # Build intraday signals section
     intraday_section = ""
     if sig and sig.lookback_ok:
+        rsi_str = f"{sig.rsi:.0f}" if sig.rsi else "N/A"
+        trend_str = "EMA20 > EMA50 ✅" if sig.ema_fast_above_slow else "EMA20 < EMA50 ⚠️"
+        ema_str = "Rising ✅" if sig.ema_slope_up else "Falling ⚠️"
+        vol_str = f"{sig.vol_ratio:.2f}x average" if sig.vol_ratio else "N/A"
+
         intraday_section = f"""
 📊 INTRADAY SIGNALS (Last Hour):
-- RSI: {sig.rsi:.0f if sig.rsi else 'N/A'}
-- Trend: {'EMA20 > EMA50 ✅' if sig.ema_fast_above_slow else 'EMA20 < EMA50 ⚠️'}
-- EMA20: {'Rising ✅' if sig.ema_slope_up else 'Falling ⚠️'}
-- Volume: {f'{sig.vol_ratio:.2f}x average' if sig.vol_ratio else 'N/A'}
+- RSI: {rsi_str}
+- Trend: {trend_str}
+- EMA20: {ema_str}
+- Volume: {vol_str}
 """
 
     # Format values safely
