@@ -1311,21 +1311,29 @@ def _build_ai_prompt_claude(row: Dict[str, Any], sig: IntradaySignals | None, in
 - Volume: {f'{sig.vol_ratio:.2f}x average' if sig.vol_ratio else 'N/A'}
 """
 
+    # Format values safely
+    last_str = f"${last:.2f}" if last else "N/A"
+    entry_str = f"${entry:.2f}" if entry else "N/A"
+    stop_str = f"${stop:.2f}" if stop else "N/A"
+    target_str = f"${target:.2f}" if target else "N/A"
+    rr_str = f"{rr:.2f}:1" if rr else "N/A"
+    unr_str = f"{unr:.2f}R" if unr else "N/A"
+
     return f"""Act as my swing trading coach for an ACTIVE POSITION. Focus on risk management and exit strategy.
 
 📈 ACTIVE TRADE:
 Symbol: {sy}
 Shares: {shares}
-Current Price: ${last:.2f if last else 'N/A'}
+Current Price: {last_str}
 
 🎯 ORIGINAL PLAN:
-- Entry: ${entry:.2f if entry else 'N/A'}
-- Stop Loss: ${stop:.2f if stop else 'N/A'}
-- Target: ${target:.2f if target else 'N/A'}
-- Planned R:R: {rr:.2f if rr else 'N/A'}:1
+- Entry: {entry_str}
+- Stop Loss: {stop_str}
+- Target: {target_str}
+- Planned R:R: {rr_str}
 
 📊 CURRENT STATUS:
-- Unrealized R: {unr:.2f if unr else 'N/A'}R
+- Unrealized R: {unr_str}
 - Progress to Target: {prog_pct:.1f}%
 - Distance from Stop: {dist_pct:.1f}%
 {intraday_section}
