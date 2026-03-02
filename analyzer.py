@@ -1511,8 +1511,8 @@ def analyzer_ui(TIINGO_TOKEN):
                     st.warning(f"⚠️ Forecast/Edge/Seasonality/Sentiment failed: {e}")
 
             # ===================== AI Entry Coaching Prompt =====================
-            with st.expander("🧠 AI Entry Coaching Prompt", expanded=False):
-                st.caption("Copy this comprehensive prompt and paste it into ChatGPT, Claude, or any AI assistant for detailed entry coaching and analysis")
+            with st.expander("🧠 AI Entry Coaching Prompt (ChatGPT & Claude)", expanded=False):
+                st.caption("Choose between ChatGPT (comprehensive) or Claude (structured) format below")
 
                 # ---- SAFETY PREAMBLE: compute indicators for the coaching helper ----
                 # Assumes you have `df` (your analyzer dataframe) and `symbol`, `setup_type` already.
@@ -1773,29 +1773,39 @@ Please provide a clear, actionable coaching response that helps me make an infor
                     )
 
                     # Add a one-click copy button (uses clipboard API via JavaScript)
-                    st.markdown("""
-                        <style>
-                        .copy-button {
-                            background-color: #10b981;
-                            color: white;
-                            padding: 10px 20px;
-                            border-radius: 5px;
-                            border: none;
-                            cursor: pointer;
-                            font-weight: bold;
-                            margin-top: 10px;
-                        }
-                        .copy-button:hover {
-                            background-color: #059669;
-                        }
-                        </style>
-                    """, unsafe_allow_html=True)
+                    # Create tabs for ChatGPT vs Claude
+                    ai_tab1, ai_tab2 = st.tabs(["ChatGPT (Comprehensive)", "Claude (Structured)"])
 
-                    if st.button("📋 Copy to Clipboard", type="primary", use_container_width=True):
-                        st.session_state["coaching_prompt"] = prompt_text
-                        # Use Streamlit's built-in clipboard functionality
-                        st.code(prompt_text, language="text")
-                        st.success("✅ Prompt displayed above! Select all (Ctrl+A or Cmd+A) and copy (Ctrl+C or Cmd+C)")
+                    with ai_tab1:
+                        st.caption("Comprehensive prompt with all available data")
+                        st.text_area("Copy ChatGPT Prompt:", value=prompt_text, height=400, key="chatgpt_prompt_analyzer")
+                        st.caption("Select all (Ctrl+A) and copy (Ctrl+C)")
+                        st.markdown("[🔗 Open ChatGPT](https://chat.openai.com)")
+
+                    with ai_tab2:
+                        # Build Claude-optimized structured prompt
+                        indicators_dict = {
+                            'current_price': current_price,
+                            'rsi': current_rsi,
+                            'ema20': current_ema20,
+                            'ema50': current_ema50,
+                            'atr': current_atr,
+                            'price_above_ema20': current_price > current_ema20,
+                            'ema20_above_ema50': current_ema20 > current_ema50,
+                            'volume_ratio': vol_analysis.get('relative_volume', 1.0),
+                            'pattern': setup_pattern
+                        }
+
+                        # Call the Claude-optimized function
+                        _render_entry_coaching(
+                            symbol=symbol,
+                            setup_type=setup_type,
+                            indicators=indicators_dict,
+                            notes=st.session_state.get('planner_notes', ''),
+                            entry=None,  # Will be filled from trade plan if available
+                            stop=None,
+                            target=None
+                        )
 
                 except Exception as e:
                     st.error(f"Could not generate coaching prompt: {e}")
