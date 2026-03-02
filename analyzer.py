@@ -2187,10 +2187,11 @@ def setup_guidance_text(entry_signal: str, key_level: float,
         )
         
         
-       
+
         # ENTRY COACHING PROMPT BUILDER
 # ---------------------------------------------------------------------------
-def _render_entry_coaching(symbol: str, setup_type: str, indicators: dict, notes: str = ""):
+def _render_entry_coaching(symbol: str, setup_type: str, indicators: dict, notes: str = "",
+                          entry: float = None, stop: float = None, target: float = None):
     """Automatically render AI coaching guidance at the bottom of the Analyzer."""
     ema20 = indicators.get("ema20")
     ema50 = indicators.get("ema50")
