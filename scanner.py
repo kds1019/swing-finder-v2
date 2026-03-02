@@ -1305,6 +1305,18 @@ def scanner_ui(TIINGO_TOKEN):
                         idx = r * per_row + j
                         if idx >= len(near_misses): break
                         rec = near_misses[idx]
+
+                        # --- Smart Badge for Sector Alignment ---
+                        favored_badge = ""
+                        if st.session_state.get("smart_mode", False) and "smart_context" in st.session_state:
+                            df = st.session_state["smart_context"]["sectors_df"]
+                            sector = get_tiingo_sector(rec["Symbol"], TIINGO_TOKEN)
+                            bias = df.loc[df["Sector"] == sector, "Bias"].values[0] if sector in df["Sector"].values else "Unknown"
+                            if bias == "Uptrend" and rec.get("NearMiss") == "Breakout":
+                                favored_badge = "🟢 Sector Uptrend"
+                            elif bias == "Downtrend" and rec.get("NearMiss") == "Pullback":
+                                favored_badge = "🔵 Sector Downtrend"
+
                         with col:
                             # Build Fibonacci badge
                             fib_badge = ""
