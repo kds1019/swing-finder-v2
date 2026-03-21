@@ -1,6 +1,9 @@
 """
 Real-Time News Feed using Tiingo News API
 Fetch and analyze news with sentiment for watchlist stocks
+
+NOTE: News API requires Tiingo News add-on ($10/mo) not included in Power Plan.
+      Functions will fail gracefully with helpful messages if not available.
 """
 
 import requests
@@ -25,14 +28,21 @@ def get_news_for_ticker(ticker: str, token: str, limit: int = 10) -> List[Dict[s
         }
         
         response = requests.get(url, headers=headers, params=params, timeout=10)
-        
-        if response.status_code != 200:
+
+        # Handle 403 Forbidden (News API not available in Power Plan)
+        if response.status_code == 403:
+            print(f"⚠️ News API requires Tiingo News add-on ($10/mo) - not available in Power Plan")
             return []
-        
+
+        if response.status_code != 200:
+            print(f"⚠️ News API error: {response.status_code}")
+            return []
+
         news = response.json()
         return news
-        
+
     except Exception as e:
+        print(f"⚠️ News fetch error: {e}")
         return []
 
 
@@ -51,14 +61,21 @@ def get_news_for_watchlist(tickers: List[str], token: str, limit: int = 50) -> L
         }
         
         response = requests.get(url, headers=headers, params=params, timeout=10)
-        
-        if response.status_code != 200:
+
+        # Handle 403 Forbidden (News API not available in Power Plan)
+        if response.status_code == 403:
+            print(f"⚠️ News API requires Tiingo News add-on ($10/mo) - not available in Power Plan")
             return []
-        
+
+        if response.status_code != 200:
+            print(f"⚠️ News API error: {response.status_code}")
+            return []
+
         news = response.json()
         return news
-        
+
     except Exception as e:
+        print(f"⚠️ News fetch error: {e}")
         return []
 
 

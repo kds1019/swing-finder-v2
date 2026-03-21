@@ -1,6 +1,9 @@
 """
 Multi-Timeframe Analysis for SwingFinder
-Analyze key indicators across multiple timeframes (Daily, Weekly, 4-Hour)
+Analyze key indicators across multiple timeframes (Daily, Weekly)
+
+NOTE: 4-Hour intraday data requires Tiingo IEX Real-Time add-on ($10/mo)
+      which is not included in Power Plan. Removed to prevent API errors.
 """
 
 import pandas as pd
@@ -19,7 +22,7 @@ def fetch_timeframe_data(symbol: str, token: str, timeframe: str, days: int = 36
     Args:
         symbol: Stock ticker
         token: Tiingo API token
-        timeframe: 'daily', 'weekly', or '4hour'
+        timeframe: 'daily' or 'weekly' (4hour removed - requires IEX Real-Time add-on)
         days: Lookback period in days
 
     Returns:
@@ -51,13 +54,15 @@ def fetch_timeframe_data(symbol: str, token: str, timeframe: str, days: int = 36
             return df_weekly
 
         elif timeframe == '4hour':
-            # Use existing fetch_tiingo_intraday function
-            df = fetch_tiingo_intraday(symbol, token, timeframe="4hour", lookback_days=days)
-            if df is None or df.empty:
-                return None
+            # 4-hour data requires Tiingo IEX Real-Time add-on ($10/mo)
+            # Not included in Power Plan - return None to prevent API errors
+            print(f"⚠️ 4-hour data requires IEX Real-Time add-on (not available)")
+            return None
 
-            # The intraday function returns only date and close
-            # We need to create a properly formatted DataFrame
+            # DISABLED CODE (requires IEX Real-Time add-on):
+            # df = fetch_tiingo_intraday(symbol, token, timeframe="4hour", lookback_days=days)
+            # if df is None or df.empty:
+            #     return None
             # For indicators, we only need Close prices anyway
             df_formatted = pd.DataFrame()
             df_formatted['Date'] = pd.to_datetime(df['date'])
@@ -169,12 +174,13 @@ def calculate_mtf_indicators(df: pd.DataFrame) -> Dict:
 
 def get_multi_timeframe_analysis(symbol: str, token: str) -> Dict:
     """
-    Get multi-timeframe analysis for a symbol across Daily, Weekly, and 4-Hour timeframes.
+    Get multi-timeframe analysis for a symbol across Daily and Weekly timeframes.
+
+    NOTE: 4-Hour timeframe removed (requires IEX Real-Time add-on not in Power Plan)
 
     Returns dict with:
         - daily: indicators for daily timeframe
         - weekly: indicators for weekly timeframe
-        - four_hour: indicators for 4-hour timeframe
         - alignment: overall trend alignment score
         - recommendation: trading recommendation based on MTF analysis
     """
@@ -187,26 +193,25 @@ def get_multi_timeframe_analysis(symbol: str, token: str) -> Dict:
     weekly_df = fetch_timeframe_data(symbol, token, "weekly", days=730)  # ~2 years for weekly
     print(f"Weekly data: {len(weekly_df) if weekly_df is not None else 0} rows")
 
-    print(f"Fetching 4-hour data for {symbol}...")
-    four_hour_df = fetch_timeframe_data(symbol, token, "4hour", days=60)  # 60 days for more data points
-    print(f"4-hour data: {len(four_hour_df) if four_hour_df is not None else 0} rows")
-    if four_hour_df is not None and not four_hour_df.empty:
-        print(f"4-hour data columns: {four_hour_df.columns.tolist()}")
-        print(f"4-hour data sample:\n{four_hour_df.head()}")
+    # 4-hour data DISABLED (requires IEX Real-Time add-on not in Power Plan)
+    # print(f"Fetching 4-hour data for {symbol}...")
+    # four_hour_df = fetch_timeframe_data(symbol, token, "4hour", days=60)
+    four_hour_df = None  # Disabled
+    four_hour_indicators = None  # Disabled
 
     # Calculate indicators for each timeframe
     daily_indicators = calculate_mtf_indicators(daily_df) if daily_df is not None and not daily_df.empty else None
     weekly_indicators = calculate_mtf_indicators(weekly_df) if weekly_df is not None and not weekly_df.empty else None
-    four_hour_indicators = calculate_mtf_indicators(four_hour_df) if four_hour_df is not None and not four_hour_df.empty else None
 
-    print(f"Indicators calculated - Daily: {daily_indicators is not None}, Weekly: {weekly_indicators is not None}, 4-Hour: {four_hour_indicators is not None}")
+    print(f"Indicators calculated - Daily: {daily_indicators is not None}, Weekly: {weekly_indicators is not None}")
 
     # Calculate alignment score (how many timeframes agree on trend)
+    # Only using Daily and Weekly (4-hour disabled)
     alignment_score = 0
     uptrend_count = 0
     total_timeframes = 0
 
-    for indicators in [daily_indicators, weekly_indicators, four_hour_indicators]:
+    for indicators in [daily_indicators, weekly_indicators]:  # Removed four_hour
         if indicators:
             total_timeframes += 1
             if indicators["trend"] == "Uptrend":
@@ -215,15 +220,15 @@ def get_multi_timeframe_analysis(symbol: str, token: str) -> Dict:
     if total_timeframes > 0:
         alignment_score = (uptrend_count / total_timeframes) * 100
 
-    # Generate recommendation
+    # Generate recommendation (4-hour removed)
     recommendation = _generate_mtf_recommendation(
-        daily_indicators, weekly_indicators, four_hour_indicators, alignment_score
+        daily_indicators, weekly_indicators, None, alignment_score  # four_hour = None
     )
 
     return {
         "daily": daily_indicators,
         "weekly": weekly_indicators,
-        "four_hour": four_hour_indicators,
+        "four_hour": None,  # Disabled (requires IEX Real-Time add-on)
         "alignment_score": round(alignment_score, 1),
         "recommendation": recommendation
     }
