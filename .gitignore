@@ -1,10 +1,25 @@
-# Secrets and API Keys - NEVER COMMIT THESE!
+# ============================================================================
+# SECRETS AND API KEYS - NEVER COMMIT THESE!
+# ============================================================================
 .streamlit/secrets.toml
 secrets.toml
 *.env
 .env
 .env.local
 .env.*.local
+.env.production
+.env.development
+.env.test
+
+# API Keys and Tokens
+*_token.txt
+*_api_key.txt
+credentials.json
+service-account.json
+
+# GitHub Personal Access Tokens
+.github_token
+github_token.txt
 
 # Python
 __pycache__/
@@ -45,11 +60,26 @@ ENV/
 # Streamlit
 .streamlit/config.toml
 
-# Local data files (ephemeral)
+# ============================================================================
+# CACHE AND TEMPORARY FILES
+# ============================================================================
 .cache/
+*.cache
+__cache__/
+.streamlit/cache/
+
+# Local data files (ephemeral - regenerated on each run)
 data/active_trades.json
 data/alerts.json
 data/alert_log.json
+data/watchlist_enhanced.json
+data/journal_entries.json
+data/backtest_results.json
+
+# Backup files
+*.bak
+*.backup
+*~.nib
 
 # Logs
 *.log
@@ -64,4 +94,20 @@ htmlcov/
 
 # OS
 Thumbs.db
+
+# ============================================================================
+# EXCEPTIONS - Files that SHOULD be tracked
+# ============================================================================
+# Universe file is needed for production
+!utils/filtered_universe.json
+
+# Example/template files should be tracked
+!.env.example
+!secrets.toml.example
+!config.example.py
+
+# README and documentation
+!README.md
+!SETUP.md
+!*.md
 

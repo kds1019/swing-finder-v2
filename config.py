@@ -3,6 +3,45 @@ SwingFinder Configuration
 Centralized configuration for all constants and magic numbers.
 """
 
+from enum import Enum
+
+# ============================================================================
+# PAGE NAVIGATION
+# ============================================================================
+
+class AppPage(Enum):
+    """Enum for consistent page navigation across the app."""
+    SCANNER = "Scanner"
+    ANALYZER = "Analyzer"
+    ACTIVE_TRADES = "Active Trades"
+    ALERTS = "Alerts"
+    BACKTEST = "Backtest"
+    JOURNAL = "Journal"
+    WATCHLIST_MANAGER = "Watchlist Manager"
+
+    @classmethod
+    def get_all_pages(cls):
+        """Get list of all page names."""
+        return [page.value for page in cls]
+
+    @classmethod
+    def normalize(cls, page_name: str):
+        """Normalize page name to match enum value."""
+        # Try exact match first
+        for page in cls:
+            if page.value == page_name:
+                return page.value
+
+        # Try case-insensitive match
+        page_name_lower = page_name.lower()
+        for page in cls:
+            if page.value.lower() == page_name_lower:
+                return page.value
+
+        # Default to Scanner if no match
+        return cls.SCANNER.value
+
+
 # ============================================================================
 # API & AUTHENTICATION
 # ============================================================================
@@ -210,4 +249,94 @@ MIN_SHARES = 1
 MAX_SHARES = 1_000_000
 MIN_PRICE_INPUT = 0.01
 MAX_PRICE_INPUT = 100_000.0
+
+
+# ============================================================================
+# SESSION STATE INITIALIZATION
+# ============================================================================
+
+def init_session_state():
+    """
+    Initialize all session state variables with default values.
+    Call this once at the start of app.py to ensure consistent state.
+    """
+    import streamlit as st
+    from datetime import datetime
+
+    # Page navigation
+    if "active_page" not in st.session_state:
+        st.session_state.active_page = AppPage.SCANNER.value
+
+    # Mobile detection
+    if "is_mobile" not in st.session_state:
+        st.session_state.is_mobile = False
+
+    # Authentication
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = True  # No auth required currently
+
+    # Watchlists
+    if "watchlists" not in st.session_state:
+        st.session_state.watchlists = {}
+
+    if "active_watchlist" not in st.session_state:
+        st.session_state.active_watchlist = "Unnamed"
+
+    # Active trades
+    if "active_trades" not in st.session_state:
+        st.session_state.active_trades = []
+
+    # Universe data
+    if "universe" not in st.session_state:
+        st.session_state.universe = []
+
+    if "universe_last_updated" not in st.session_state:
+        st.session_state.universe_last_updated = None
+
+    # Alert settings
+    if "alert_settings" not in st.session_state:
+        st.session_state.alert_settings = {
+            "premarket_enabled": True,
+            "breakout_enabled": True,
+            "daily_summary_enabled": False,
+            "quiet_hours_start": 22,  # 10pm
+            "quiet_hours_end": 6,     # 6am
+        }
+
+    # Activity tracking
+    if "last_activity" not in st.session_state:
+        st.session_state.last_activity = datetime.now()
+
+    # Scanner state
+    if "scanner_results" not in st.session_state:
+        st.session_state.scanner_results = []
+
+    if "scanner_running" not in st.session_state:
+        st.session_state.scanner_running = False
+
+    # Analyzer state
+    if "analyzer_symbol" not in st.session_state:
+        st.session_state.analyzer_symbol = ""
+
+    if "planner_notes" not in st.session_state:
+        st.session_state.planner_notes = ""
+
+    # Journal state
+    if "journal_entries" not in st.session_state:
+        st.session_state.journal_entries = []
+
+    # Cache control
+    if "cache_cleared_at" not in st.session_state:
+        st.session_state.cache_cleared_at = None
+
+    # Coaching prompts
+    if "copied_prompt" not in st.session_state:
+        st.session_state.copied_prompt = None
+
+    # Smart mode
+    if "smart_mode" not in st.session_state:
+        st.session_state.smart_mode = False
+
+    if "smart_context" not in st.session_state:
+        st.session_state.smart_context = {}
 

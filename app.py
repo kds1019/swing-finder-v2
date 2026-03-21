@@ -8,6 +8,7 @@ from backtest_page import show_backtest_page
 from journal_page import show_journal_page
 from utils.mobile_styles import apply_mobile_styles, add_pwa_meta_tags
 from utils.rate_limiter import show_rate_limit_status
+from config import AppPage, init_session_state
 
 import os
 import json
@@ -97,31 +98,35 @@ if "is_mobile" not in st.session_state:
 #     st.stop()  # Stop here if not authenticated
 
 # ---------------- Session Setup ----------------
-# Ensure consistent, properly capitalized page names
-if "active_page" not in st.session_state:
-    st.session_state["active_page"] = "Scanner"
-else:
-    page_val = st.session_state["active_page"].strip().lower()
-    if page_val == "analyzer":
-        st.session_state["active_page"] = "Analyzer"
-    elif page_val == "scanner":
-        st.session_state["active_page"] = "Scanner"
-    elif page_val in ["active trades", "activetrades"]:
-        st.session_state["active_page"] = "Active Trades"
-    elif page_val in ["alerts", "alert management"]:
-        st.session_state["active_page"] = "Alerts"
-    elif page_val in ["backtest", "backtesting"]:
-        st.session_state["active_page"] = "Backtest"
-    elif page_val in ["journal", "trade journal"]:
-        st.session_state["active_page"] = "Journal"
+# Initialize all session state variables with defaults
+init_session_state()
+
+# Normalize active page to ensure consistency
+st.session_state["active_page"] = AppPage.normalize(st.session_state["active_page"])
 
 # ---------------- Sidebar Navigation ----------------
 st.sidebar.title("⚙️ SwingFinder Navigation")
 
+# Define available pages (excluding Watchlist Manager for now)
+available_pages = [
+    AppPage.SCANNER.value,
+    AppPage.ANALYZER.value,
+    AppPage.BACKTEST.value,
+    AppPage.ALERTS.value,
+    AppPage.ACTIVE_TRADES.value,
+    AppPage.JOURNAL.value,
+]
+
+# Get current page index
+try:
+    current_index = available_pages.index(st.session_state["active_page"])
+except ValueError:
+    current_index = 0  # Default to Scanner if page not found
+
 page = st.sidebar.radio(
     "Go to:",
-    ["Scanner", "Analyzer", "Backtest", "Alerts", "Active Trades", "Journal"],
-    index=["Scanner", "Analyzer", "Backtest", "Alerts", "Active Trades", "Journal"].index(st.session_state["active_page"]) if st.session_state["active_page"] in ["Scanner", "Analyzer", "Backtest", "Alerts", "Active Trades", "Journal"] else 0,
+    available_pages,
+    index=current_index,
 )
 st.session_state["active_page"] = page  # keep sidebar synced
 
