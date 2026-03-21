@@ -7,6 +7,7 @@ from alerts_page import show_alerts_page
 from backtest_page import show_backtest_page
 from journal_page import show_journal_page
 from utils.mobile_styles import apply_mobile_styles, add_pwa_meta_tags
+from utils.rate_limiter import show_rate_limit_status
 
 import os
 import json
@@ -148,6 +149,10 @@ if st.sidebar.button("🔄 Refresh Tiingo Universe"):
     st.cache_data.clear()
     refresh_universe_manual(TIINGO_TOKEN)
     st.rerun()  # Force a rerun to reload the universe
+
+# ---------------- Rate Limit Status ----------------
+st.sidebar.divider()
+show_rate_limit_status()
 
 
 # ---------------- Page Routing ----------------
