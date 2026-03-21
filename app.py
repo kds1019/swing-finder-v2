@@ -107,8 +107,9 @@ st.session_state["active_page"] = AppPage.normalize(st.session_state["active_pag
 # ---------------- Sidebar Navigation ----------------
 st.sidebar.title("⚙️ SwingFinder Navigation")
 
-# Define available pages (excluding Watchlist Manager for now)
+# Define available pages
 available_pages = [
+    AppPage.PREMARKET.value,
     AppPage.SCANNER.value,
     AppPage.ANALYZER.value,
     AppPage.BACKTEST.value,

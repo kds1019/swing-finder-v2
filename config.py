@@ -11,6 +11,7 @@ from enum import Enum
 
 class AppPage(Enum):
     """Enum for consistent page navigation across the app."""
+    PREMARKET = "Pre-Market"
     SCANNER = "Scanner"
     ANALYZER = "Analyzer"
     ACTIVE_TRADES = "Active Trades"
