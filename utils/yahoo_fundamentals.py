@@ -1,11 +1,33 @@
 """
 Yahoo Finance Fundamentals Integration
 Fetch and analyze fundamental data for stocks using yfinance
+
+NOTE: Yahoo Finance throttles aggressive requests (>5-10 per second).
+      Rate limiting is applied to prevent throttling.
 """
 
 import yfinance as yf
 import streamlit as st
+import time
 from typing import Dict, Any, Optional
+
+# Simple rate limiter for Yahoo Finance (more lenient than Tiingo)
+_last_yahoo_request_time = 0
+_yahoo_min_delay = 0.5  # 500ms between requests (max 2 per second)
+
+
+def _yahoo_rate_limit():
+    """Apply rate limiting for Yahoo Finance requests."""
+    global _last_yahoo_request_time
+
+    current_time = time.time()
+    time_since_last = current_time - _last_yahoo_request_time
+
+    if time_since_last < _yahoo_min_delay:
+        sleep_time = _yahoo_min_delay - time_since_last
+        time.sleep(sleep_time)
+
+    _last_yahoo_request_time = time.time()
 
 
 @st.cache_data(ttl=86400, show_spinner=False)  # Cache for 24 hours
@@ -13,15 +35,27 @@ def get_yahoo_fundamentals(ticker: str) -> Optional[Dict[str, Any]]:
     """
     Fetch fundamental data for a ticker from Yahoo Finance.
     Returns key financial metrics.
+
+    NOTE: Rate limited to prevent Yahoo throttling (max 2 requests/second).
     """
     try:
+        # Apply rate limiting
+        _yahoo_rate_limit()
+
         stock = yf.Ticker(ticker)
         info = stock.info
         
         # Check if we got valid data
         if not info or 'marketCap' not in info:
+            # Might be throttled or invalid ticker
             return None
-        
+
+        # Check for throttling indicators
+        if info.get('regularMarketPrice') is None and info.get('currentPrice') is None:
+            # Likely throttled - return None and let cache handle it
+            print(f"⚠️ Yahoo Finance may be throttling requests for {ticker}")
+            return None
+
         return {
             "market_cap": info.get('marketCap', 0),
             "revenue": info.get('totalRevenue', 0),
@@ -37,6 +71,11 @@ def get_yahoo_fundamentals(ticker: str) -> Optional[Dict[str, Any]]:
         }
         
     except Exception as e:
+        # Check if it's a throttling error
+        error_msg = str(e).lower()
+        if '429' in error_msg or 'too many requests' in error_msg or 'rate limit' in error_msg:
+            print(f"⚠️ Yahoo Finance throttled request for {ticker}. Waiting 2 seconds...")
+            time.sleep(2)  # Wait 2 seconds on throttle
         return None
 
 
