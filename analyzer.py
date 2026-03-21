@@ -12,14 +12,8 @@ from utils.storage import load_json, save_json
 from utils.tiingo_api import get_next_earnings_date
 from utils.ml_models import ensemble_ml_forecast
 from news_feed import show_news_widget
-from utils.fundamentals import (
-    get_fundamentals, calculate_fundamental_score,
-    extract_key_metrics, format_large_number
-)
-from utils.earnings_analysis import (
-    get_earnings_history, analyze_earnings_performance,
-    calculate_earnings_quality_score, format_earnings_table,
-    get_earnings_risk_level
+from utils.yahoo_fundamentals import (
+    get_yahoo_fundamentals, calculate_yahoo_fundamental_score
 )
 from utils.relative_strength import (
     get_multi_timeframe_strength, analyze_strength_trend,
@@ -38,9 +32,9 @@ def get_cached_stock_data(symbol: str, token: str, days: int = 250):
     return tiingo_history(symbol, token, days)
 
 @st.cache_data(ttl=300, show_spinner=False)
-def get_cached_fundamentals(symbol: str, token: str):
-    """Cache fundamental data for 5 minutes."""
-    return get_fundamentals(symbol, token)
+def get_cached_fundamentals(symbol: str):
+    """Cache fundamental data for 5 minutes (Yahoo Finance)."""
+    return get_yahoo_fundamentals(symbol)
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_cached_earnings(symbol: str, token: str):
@@ -970,19 +964,18 @@ def analyzer_ui(TIINGO_TOKEN):
                 st.caption("Company financial health and profitability metrics")
 
                 try:
-                    fundamentals = get_fundamentals(symbol, TIINGO_TOKEN)
+                    fundamentals = get_yahoo_fundamentals(symbol)
 
-                    if fundamentals and fundamentals.get("quarterly"):
+                    if fundamentals:
                         # Calculate score
-                        score_data = calculate_fundamental_score(fundamentals)
-                        metrics = extract_key_metrics(fundamentals)
+                        score_data = calculate_yahoo_fundamental_score(fundamentals)
 
                         # Display score
-                        score = score_data["score"]
-                        grade = score_data["grade"]
+                        score = score_data.get("score", 0)
+                        grade = score_data.get("grade", "N/A")
                         score_color = "green" if score >= 70 else "orange" if score >= 50 else "red"
 
-                        col_fund1, col_fund2, col_fund3 = st.columns([1, 2, 2])
+                        col_fund1, col_fund2 = st.columns([1, 3])
 
                         with col_fund1:
                             st.markdown(
@@ -993,109 +986,87 @@ def analyzer_ui(TIINGO_TOKEN):
                             )
 
                         with col_fund2:
-                            st.markdown("**Profitability**")
-                            st.markdown(f"- Profit Margin: **{metrics.get('profit_margin', 0):.1f}%**")
-                            st.markdown(f"- ROE: **{metrics.get('roe', 0):.1f}%**")
-                            st.markdown(f"- ROA: **{metrics.get('roa', 0):.1f}%**")
-
-                        with col_fund3:
-                            st.markdown("**Financial Health**")
-                            st.markdown(f"- Debt/Equity: **{metrics.get('debt_to_equity', 0):.2f}**")
-                            st.markdown(f"- Current Ratio: **{metrics.get('current_ratio', 0):.2f}**")
-                            st.markdown(f"- Cash: **{format_large_number(metrics.get('cash', 0))}**")
+                            st.markdown("**Key Metrics (Yahoo Finance)**")
+                            # Display available Yahoo metrics
+                            if "profitMargins" in fundamentals:
+                                st.markdown(f"- Profit Margin: **{fundamentals['profitMargins']*100:.1f}%**")
+                            if "returnOnEquity" in fundamentals:
+                                st.markdown(f"- ROE: **{fundamentals['returnOnEquity']*100:.1f}%**")
+                            if "debtToEquity" in fundamentals:
+                                st.markdown(f"- Debt/Equity: **{fundamentals['debtToEquity']:.2f}**")
+                            if "currentRatio" in fundamentals:
+                                st.markdown(f"- Current Ratio: **{fundamentals['currentRatio']:.2f}**")
 
                         # Detailed breakdown in expander
                         with st.expander("📋 Detailed Fundamental Breakdown"):
+                            st.markdown("**Company Info**")
+                            if "longBusinessSummary" in fundamentals:
+                                st.caption(fundamentals["longBusinessSummary"][:300] + "...")
+
+                            st.markdown("**Financial Metrics**")
                             col_detail1, col_detail2 = st.columns(2)
 
                             with col_detail1:
-                                st.markdown("### Income Statement")
-                                st.markdown(f"- Revenue: {format_large_number(metrics.get('revenue', 0))}")
-                                st.markdown(f"- Gross Profit: {format_large_number(metrics.get('gross_profit', 0))}")
-                                st.markdown(f"- Operating Income: {format_large_number(metrics.get('operating_income', 0))}")
-                                st.markdown(f"- Net Income: {format_large_number(metrics.get('net_income', 0))}")
-                                st.markdown(f"- Gross Margin: {metrics.get('gross_margin', 0):.1f}%")
+                                if "marketCap" in fundamentals:
+                                    st.markdown(f"- Market Cap: ${fundamentals['marketCap']/1e9:.2f}B")
+                                if "trailingPE" in fundamentals:
+                                    st.markdown(f"- P/E Ratio: {fundamentals['trailingPE']:.2f}")
+                                if "priceToBook" in fundamentals:
+                                    st.markdown(f"- P/B Ratio: {fundamentals['priceToBook']:.2f}")
 
                             with col_detail2:
-                                st.markdown("### Balance Sheet")
-                                st.markdown(f"- Total Assets: {format_large_number(metrics.get('total_assets', 0))}")
-                                st.markdown(f"- Total Liabilities: {format_large_number(metrics.get('total_liabilities', 0))}")
-                                st.markdown(f"- Total Equity: {format_large_number(metrics.get('total_equity', 0))}")
-                                st.markdown(f"- Total Debt: {format_large_number(metrics.get('total_debt', 0))}")
-                                st.markdown(f"- Current Assets: {format_large_number(metrics.get('current_assets', 0))}")
+                                if "beta" in fundamentals:
+                                    st.markdown(f"- Beta: {fundamentals['beta']:.2f}")
+                                if "dividendYield" in fundamentals and fundamentals['dividendYield']:
+                                    st.markdown(f"- Dividend Yield: {fundamentals['dividendYield']*100:.2f}%")
+                                if "52WeekChange" in fundamentals:
+                                    st.markdown(f"- 52W Change: {fundamentals['52WeekChange']*100:.1f}%")
 
-                            st.markdown("### Quality Score Breakdown")
-                            for detail in score_data["details"]:
-                                st.markdown(f"- {detail}")
+                            if "details" in score_data:
+                                st.markdown("### Quality Score Breakdown")
+                                for detail in score_data["details"]:
+                                    st.markdown(f"- {detail}")
                     else:
                         st.info("Fundamental data not available for this ticker")
 
                 except Exception as e:
                     st.warning(f"Could not load fundamental data: {e}")
 
-            # ===================== Earnings Analysis =====================
-            with st.expander("📅 Earnings Analysis", expanded=False):
-                st.caption("Earnings history, growth metrics, and quality score")
+            # ===================== Earnings Info (Yahoo Finance) =====================
+            with st.expander("📅 Earnings Info", expanded=False):
+                st.caption("Basic earnings information from Yahoo Finance")
 
                 try:
-                    earnings_history = get_earnings_history(symbol, TIINGO_TOKEN)
+                    # Get earnings info from Yahoo fundamentals
+                    earnings_info = get_yahoo_fundamentals(symbol)
 
-                    if earnings_history and len(earnings_history) > 0:
-                        # Calculate metrics
-                        performance = analyze_earnings_performance(earnings_history)
-                        quality = calculate_earnings_quality_score(earnings_history)
-
-                        # Display quality score
-                        col_earn1, col_earn2, col_earn3 = st.columns([1, 2, 2])
+                    if earnings_info:
+                        # Display basic earnings metrics
+                        col_earn1, col_earn2 = st.columns(2)
 
                         with col_earn1:
-                            score_color = "green" if quality["score"] >= 70 else "orange" if quality["score"] >= 50 else "red"
-                            st.markdown(
-                                f"<div style='background-color:{score_color};padding:20px;border-radius:10px;color:white;text-align:center;'>"
-                                f"<h2 style='margin:0;'>{quality['score']}/100</h2>"
-                                f"<p style='margin:0;'>Grade: {quality['grade']}</p>"
-                                f"<small>Earnings Quality</small></div>",
-                                unsafe_allow_html=True
-                            )
+                            st.markdown("**Earnings Metrics**")
+                            if "trailingEps" in earnings_info:
+                                st.markdown(f"- EPS (TTM): **${earnings_info['trailingEps']:.2f}**")
+                            if "forwardEps" in earnings_info:
+                                st.markdown(f"- Forward EPS: **${earnings_info['forwardEps']:.2f}**")
+                            if "earningsGrowth" in earnings_info:
+                                st.markdown(f"- Earnings Growth: **{earnings_info['earningsGrowth']*100:.1f}%**")
 
                         with col_earn2:
-                            st.markdown("**Growth Metrics**")
-                            st.markdown(f"- Revenue Growth (YoY): **{performance['revenue_growth']:.1f}%**")
-                            st.markdown(f"- Earnings Growth (YoY): **{performance['earnings_growth']:.1f}%**")
-                            st.markdown(f"- Total Reports: **{performance['total_reports']}**")
+                            st.markdown("**Valuation**")
+                            if "trailingPE" in earnings_info:
+                                st.markdown(f"- P/E Ratio: **{earnings_info['trailingPE']:.2f}**")
+                            if "forwardPE" in earnings_info:
+                                st.markdown(f"- Forward P/E: **{earnings_info['forwardPE']:.2f}**")
+                            if "pegRatio" in earnings_info:
+                                st.markdown(f"- PEG Ratio: **{earnings_info['pegRatio']:.2f}**")
 
-                        with col_earn3:
-                            st.markdown("**Latest Quarter**")
-                            latest_rev = performance['latest_revenue']
-                            latest_earn = performance['latest_earnings']
-                            st.markdown(f"- Revenue: **${latest_rev/1e9:.2f}B**" if latest_rev > 1e9 else f"- Revenue: **${latest_rev/1e6:.2f}M**")
-                            st.markdown(f"- Net Income: **${latest_earn/1e9:.2f}B**" if abs(latest_earn) > 1e9 else f"- Net Income: **${latest_earn/1e6:.2f}M**")
-
-                        # Earnings risk check
-                        next_earnings = get_next_earnings_date(symbol, TIINGO_TOKEN)
-
-                        if next_earnings and next_earnings != "N/A":
-                            try:
-                                from datetime import datetime
-                                earnings_date = datetime.strptime(next_earnings, "%Y-%m-%d")
-                                days_until = (earnings_date - datetime.now()).days
-                                risk_level = get_earnings_risk_level(days_until)
-
-                                st.info(f"**Next Earnings**: {next_earnings} ({days_until} days) - {risk_level}")
-                            except:
-                                st.info(f"**Next Earnings**: {next_earnings}")
-
-                        # Detailed history in expander
-                        with st.expander("📊 Earnings History (Last 8 Quarters)"):
-                            earnings_df = format_earnings_table(earnings_history)
-                            if not earnings_df.empty:
-                                st.dataframe(earnings_df, use_container_width=True)
-
-                            st.markdown("### Quality Score Breakdown")
-                            for detail in quality["details"]:
-                                st.markdown(f"- {detail}")
+                        # Next earnings date
+                        if "nextEarningsDate" in earnings_info and earnings_info["nextEarningsDate"]:
+                            st.info(f"**Next Earnings**: {earnings_info['nextEarningsDate']}")
                     else:
-                        st.info("Earnings history not available for this ticker")
+                        st.info("Earnings information not available for this ticker")
 
                 except Exception as e:
                     st.warning(f"Could not load earnings data: {e}")
