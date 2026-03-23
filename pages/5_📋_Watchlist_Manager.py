@@ -25,27 +25,70 @@ except:
 st.title("📋 Watchlist Manager")
 st.markdown("**Manage your watchlist with entry/stop/target points for the alert system**")
 
-# Show which Scanner watchlist is being used
-try:
-    gist_id = st.secrets.get("GIST_ID") or os.getenv("GIST_ID")
-    if gist_id:
+# Check if Gist is configured
+gist_id = st.secrets.get("GIST_ID") or os.getenv("GIST_ID")
+github_token = st.secrets.get("GITHUB_GIST_TOKEN") or os.getenv("GITHUB_GIST_TOKEN")
+
+if gist_id and github_token:
+    st.success("✅ Cloud sync enabled - Your watchlist is saved to GitHub Gist and won't be lost!")
+    try:
         data = load_gist_json(gist_id, "watchlist.json")
         if isinstance(data, dict):
             watchlist_names = list(data.keys())
             active_name = st.session_state.get("active_watchlist", watchlist_names[0] if watchlist_names else "Unnamed")
-
             st.info(f"📂 **Synced with Scanner Watchlist:** '{active_name}' ({len(data.get(active_name, []))} stocks)")
-            st.caption("💡 Stocks added/removed here will sync with the Scanner page")
-except:
-    pass
+    except:
+        pass
+else:
+    st.error("⚠️ **Cloud sync NOT configured** - Your watchlist will be LOST when Streamlit Cloud redeploys!")
+    with st.expander("🔧 How to Enable Cloud Sync (REQUIRED to keep your data)", expanded=True):
+        st.markdown("""
+        **Why you need this:** Streamlit Cloud deletes local files on every redeploy. Without cloud sync, your watchlist disappears!
+
+        **Quick Setup (5 minutes):**
+
+        1. **Create GitHub Token:**
+           - Go to https://github.com/settings/tokens
+           - Click "Generate new token (classic)"
+           - Name: "SwingFinder Watchlist"
+           - Check ONLY: `gist` scope
+           - Click "Generate token" and **copy it**
+
+        2. **Create Gist:**
+           - Go to https://gist.github.com/
+           - Create new Gist (any name, any content)
+           - Copy the Gist ID from URL (e.g., `abc123def456`)
+
+        3. **Add to Streamlit Secrets:**
+           - In Streamlit Cloud: App Settings → Secrets
+           - Add these lines:
+           ```
+           GITHUB_GIST_TOKEN = "paste_your_token_here"
+           GIST_ID = "paste_your_gist_id_here"
+           ```
+           - Save and redeploy
+
+        **Done!** Your watchlist will now survive redeploys.
+        """)
 
 # Load watchlist
 def load_watchlist_enhanced():
     """Load watchlist with entry/stop/target data from Scanner's format."""
     try:
-        # Try loading from Gist first (Scanner format)
+        # Try loading from Gist first
         gist_id = st.secrets.get("GIST_ID") or os.getenv("GIST_ID")
-        if gist_id:
+        github_token = st.secrets.get("GITHUB_GIST_TOKEN") or os.getenv("GITHUB_GIST_TOKEN")
+
+        if gist_id and github_token:
+            # Try enhanced watchlist first (has entry/stop/target data)
+            try:
+                data = load_gist_json(gist_id, "watchlist_enhanced.json")
+                if data and isinstance(data, list):
+                    return data
+            except:
+                pass
+
+            # Fallback to Scanner format
             try:
                 data = load_gist_json(gist_id, "watchlist.json")
 
@@ -93,11 +136,16 @@ def save_watchlist_enhanced(watchlist):
     # Save enhanced data locally (for alerts system)
     save_json(watchlist, "data/watchlist_enhanced.json")
 
-    # Also update Scanner's format in Gist
+    # Save to GitHub Gist for cloud persistence
     gist_id = st.secrets.get("GIST_ID") or os.getenv("GIST_ID")
-    if gist_id:
+    github_token = st.secrets.get("GITHUB_GIST_TOKEN") or os.getenv("GITHUB_GIST_TOKEN")
+
+    if gist_id and github_token:
         try:
-            # Load existing Scanner watchlists
+            # Save enhanced watchlist to Gist (with entry/stop/target data)
+            save_gist_json(gist_id, "watchlist_enhanced.json", watchlist)
+
+            # Also update Scanner's format in Gist for compatibility
             existing_data = load_gist_json(gist_id, "watchlist.json")
 
             # If it's Scanner format (dict), update the active watchlist
@@ -115,7 +163,8 @@ def save_watchlist_enhanced(watchlist):
             else:
                 # Save in enhanced format
                 save_gist_json(gist_id, "watchlist.json", watchlist)
-        except:
+        except Exception as e:
+            # Fail silently if Gist not configured
             pass
 
 # Load watchlist
