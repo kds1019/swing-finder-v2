@@ -92,30 +92,38 @@ def get_premarket_price(symbol: str, token: str):
         # Get current/pre-market price
         quote = fetch_tiingo_realtime_quote(symbol, token)
         current_price = quote.get('last') or quote.get('tngoLast')
-        
+        current_volume = quote.get('volume', 0)
+
         if not current_price:
             return None
-        
-        # Get previous close
-        df = tiingo_history(symbol, token, days=5)
+
+        # Get previous close and average volume
+        df = tiingo_history(symbol, token, days=20)
         if df is None or df.empty:
             return None
-        
+
         prev_close = df['Close'].iloc[-1]
-        
+        avg_volume = df['Volume'].mean()
+
         # Calculate gap
         gap_amount = current_price - prev_close
         gap_percent = (gap_amount / prev_close) * 100
-        
+
+        # Calculate volume ratio (current vs average)
+        volume_ratio = (current_volume / avg_volume) if avg_volume > 0 else 0
+
         return {
             "symbol": symbol,
             "current_price": current_price,
             "prev_close": prev_close,
             "gap_amount": gap_amount,
             "gap_percent": gap_percent,
-            "direction": "UP" if gap_percent > 0 else "DOWN"
+            "direction": "UP" if gap_percent > 0 else "DOWN",
+            "current_volume": current_volume,
+            "avg_volume": avg_volume,
+            "volume_ratio": volume_ratio
         }
-    
+
     except Exception as e:
         return None
 
@@ -237,8 +245,11 @@ with col2:
 
                     gap_emoji = "🟢" if gap_pct > 0 else "🔴" if gap_pct < 0 else "⚪"
 
+                    # Format entry price
+                    entry_str = f"${entry:.2f}" if entry else "N/A"
+
                     st.markdown(f"**{symbol}** ${current:.2f} ({gap_pct:+.1f}%) {gap_emoji}")
-                    st.caption(f"{setup} | Entry: ${entry:.2f if entry else 'N/A'} {near_entry}")
+                    st.caption(f"{setup} | Entry: {entry_str} {near_entry}")
                     st.divider()
                 else:
                     st.markdown(f"**{symbol}** - Loading...")
@@ -277,6 +288,9 @@ with col3:
 
                 if gap_data:
                     current = gap_data['current_price']
+                    volume_ratio = gap_data.get('volume_ratio', 0)
+                    current_volume = gap_data.get('current_volume', 0)
+                    avg_volume = gap_data.get('avg_volume', 0)
 
                     # Check if within 5% of entry
                     distance = ((current - entry) / entry) * 100
@@ -289,7 +303,10 @@ with col3:
                             'stop': stop,
                             'target': target,
                             'distance': distance,
-                            'setup': setup
+                            'setup': setup,
+                            'volume_ratio': volume_ratio,
+                            'current_volume': current_volume,
+                            'avg_volume': avg_volume
                         })
 
             # Sort by distance to entry (closest first)
@@ -299,9 +316,25 @@ with col3:
                 for t in triggers[:10]:
                     status = "✅ TRIGGERED" if t['current'] >= t['entry'] else f"📍 {abs(t['distance']):.1f}% away"
 
+                    # Volume indicator
+                    vol_ratio = t.get('volume_ratio', 0)
+                    if vol_ratio >= 1.5:
+                        vol_indicator = "🔥 HIGH VOL"
+                        vol_color = "green"
+                    elif vol_ratio >= 0.8:
+                        vol_indicator = "✅ Normal"
+                        vol_color = "blue"
+                    else:
+                        vol_indicator = "⚠️ LOW VOL"
+                        vol_color = "orange"
+
                     st.markdown(f"**{t['symbol']}** ${t['current']:.2f}")
                     st.caption(f"{t['setup']} | Entry: ${t['entry']:.2f}")
                     st.caption(f"Status: {status}")
+
+                    # Show volume info
+                    if vol_ratio > 0:
+                        st.caption(f"Volume: {vol_indicator} ({vol_ratio:.1f}x avg)")
 
                     if t['stop'] and t['target']:
                         risk = abs(t['entry'] - t['stop'])

@@ -6,6 +6,7 @@ Manage watchlist with entry/stop/target points for alert system
 import streamlit as st
 import os
 import json
+from datetime import datetime
 from utils.storage import load_json, save_json, load_gist_json, save_gist_json
 from utils.watchlist_hygiene import get_cleanup_preview, clean_watchlist_daily
 
@@ -271,6 +272,90 @@ with tab2:
 # ============================================================================
 # WATCHLIST AUTO-CLEANUP
 # ============================================================================
+
+st.divider()
+
+# ============================================================================
+# EXPORT FOR CLAUDE ANALYSIS
+# ============================================================================
+
+st.markdown("## 🤖 Export for Claude Analysis")
+st.caption("Copy your watchlist to paste into Claude for AI analysis")
+
+if st.button("📋 Generate Claude Export", use_container_width=True):
+    watchlist = load_watchlist_enhanced()
+
+    if watchlist:
+        # Build formatted text for Claude
+        export_text = f"""
+# SwingFinder Watchlist Analysis Request
+
+Please analyze my swing trading watchlist and provide insights.
+
+**Total Stocks:** {len(watchlist)}
+**Date:** {datetime.now().strftime('%Y-%m-%d')}
+
+---
+
+## Watchlist Details:
+
+"""
+
+        for i, stock in enumerate(watchlist, 1):
+            symbol = stock.get('symbol', 'N/A')
+            entry = stock.get('entry', 0)
+            stop = stock.get('stop', 0)
+            target = stock.get('target', 0)
+            setup = stock.get('setup_type', 'N/A')
+            notes = stock.get('notes', '')
+
+            # Calculate R:R if available
+            rr = "N/A"
+            if entry and stop and target:
+                risk = abs(entry - stop)
+                reward = abs(target - entry)
+                if risk > 0:
+                    rr = f"{reward/risk:.2f}:1"
+
+            export_text += f"""
+### {i}. {symbol}
+- **Setup Type:** {setup}
+- **Entry:** ${entry:.2f if entry else 'N/A'}
+- **Stop Loss:** ${stop:.2f if stop else 'N/A'}
+- **Target:** ${target:.2f if target else 'N/A'}
+- **Risk:Reward:** {rr}
+- **Notes:** {notes if notes else 'None'}
+
+"""
+
+        export_text += """
+---
+
+## Analysis Request:
+
+Please provide:
+1. **Overall Portfolio Assessment** - Is this a balanced watchlist?
+2. **Risk Analysis** - Are the R:R ratios acceptable? Any concerns?
+3. **Setup Diversity** - Good mix of breakouts vs pullbacks?
+4. **Recommendations** - Which setups look strongest? Any to remove?
+5. **Position Sizing** - Suggested allocation across these stocks
+6. **Market Context** - How does this align with current market conditions?
+
+Thank you!
+"""
+
+        # Display in text area for easy copying
+        st.text_area(
+            "📋 Copy this text and paste into Claude:",
+            export_text,
+            height=400,
+            help="Click inside, press Ctrl+A (select all), then Ctrl+C (copy)"
+        )
+
+        st.success("✅ Watchlist exported! Copy the text above and paste into Claude.")
+        st.info("💡 Tip: You can also ask Claude specific questions about individual stocks or setups.")
+    else:
+        st.warning("No stocks in watchlist to export")
 
 st.divider()
 st.markdown("## 🧹 Watchlist Auto-Cleanup")
