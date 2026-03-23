@@ -4,7 +4,8 @@ import pandas as pd
 import streamlit as st
 
 from utils.logger import get_logger
-from utils.rate_limiter import tiingo_limiter
+# DISABLED: Rate limiter was slowing down scanner too much
+# from utils.rate_limiter import tiingo_limiter
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -27,14 +28,8 @@ def tiingo_all_us_tickers(token: str) -> list[str]:
 
     try:
         for ch in string.ascii_uppercase:
-            # Rate limit before API call
-            tiingo_limiter.wait_if_needed()
-
             params = {"token": token, "query": ch, "limit": 1000}
             r = requests.get(url, headers=headers, params=params, timeout=20)
-
-            # Record request after API call
-            tiingo_limiter.record_request()
 
             if not r.ok:
                 logger.warning(f"Search chunk {ch} failed ({r.status_code})")
@@ -92,13 +87,7 @@ def tiingo_history(ticker: str, token: str, days: int) -> pd.DataFrame | None:
     }
 
     try:
-        # Rate limit before API call
-        tiingo_limiter.wait_if_needed()
-
         r = requests.get(url, params=params, timeout=15)
-
-        # Record request after API call
-        tiingo_limiter.record_request()
 
         if r.status_code != 200:
             logger.warning(f"Tiingo fetch failed for {ticker}: {r.status_code}")
@@ -363,13 +352,7 @@ def get_next_earnings_date(symbol: str, token: str) -> str:
     url = f"https://api.tiingo.com/tiingo/daily/{symbol.lower()}"
     headers = {"Authorization": f"Token {token}"}
     try:
-        # Rate limit before API call
-        tiingo_limiter.wait_if_needed()
-
         r = requests.get(url, headers=headers, timeout=5)
-
-        # Record request after API call
-        tiingo_limiter.record_request()
 
         if not r.ok:
             print(f"⚠️ Earnings fetch failed for {symbol}: {r.status_code}")
@@ -390,13 +373,7 @@ def fetch_tiingo_realtime_quote(symbol: str, token: str) -> dict:
     url = f"https://api.tiingo.com/iex/{symbol.lower()}"
     headers = {"Authorization": f"Token {token}"}
     try:
-        # Rate limit before API call
-        tiingo_limiter.wait_if_needed()
-
         r = requests.get(url, headers=headers, timeout=10)
-
-        # Record request after API call
-        tiingo_limiter.record_request()
 
         if not r.ok:
             print(f"⚠️ Tiingo real-time fetch failed {symbol}: {r.status_code}")
