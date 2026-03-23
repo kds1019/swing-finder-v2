@@ -7,6 +7,7 @@ import streamlit as st
 import os
 import json
 from utils.storage import load_json, save_json, load_gist_json, save_gist_json
+from utils.watchlist_hygiene import get_cleanup_preview, clean_watchlist_daily
 
 # Page config
 st.set_page_config(page_title="Watchlist Manager - SwingFinder", page_icon="📋", layout="wide")
@@ -266,4 +267,144 @@ with tab2:
                 st.success(f"✅ Added {symbol_input} to watchlist!")
                 st.balloons()
                 st.rerun()
+
+# ============================================================================
+# WATCHLIST AUTO-CLEANUP
+# ============================================================================
+
+st.divider()
+st.markdown("## 🧹 Watchlist Auto-Cleanup")
+st.caption("Automatically remove invalid setups to keep your watchlist clean and focused")
+
+# Explain cleanup criteria
+with st.expander("ℹ️ What Gets Removed?", expanded=False):
+    st.markdown("""
+    The cleanup system removes stocks that meet any of these criteria:
+
+    **1. Broke Below Stop Loss**
+    - Stock price dropped below your stop loss
+    - Setup is invalidated (bearish breakdown)
+    - Example: Entry $150, Stop $145, Current $143 ❌
+
+    **2. Ran Away (Missed Opportunity)**
+    - Stock ran >10% above your entry price
+    - Too late to chase the entry
+    - Example: Entry $100, Current $112 ❌
+
+    **3. Dead Money (No Movement)**
+    - Less than 2% price movement in 14 days
+    - Stock is consolidating too long
+    - Example: 14 days ago $50, Current $50.50 (1% move) ❌
+
+    **What Stays:**
+    - ✅ Stocks still valid (above stop, near entry, moving)
+    - ✅ Stocks without entry/stop set (manual review needed)
+    """)
+
+# Preview cleanup
+st.markdown("### 🔍 Preview Cleanup")
+
+if st.button("🔍 Preview What Will Be Removed", use_container_width=True):
+    with st.spinner("Analyzing watchlist..."):
+        try:
+            preview = get_cleanup_preview(TIINGO_TOKEN)
+
+            to_remove = preview['to_remove']
+            to_keep = preview['to_keep']
+
+            if to_remove:
+                st.warning(f"⚠️ **{len(to_remove)} stocks** will be removed:")
+
+                for stock in to_remove:
+                    symbol = stock['symbol']
+                    current = stock.get('current_price', 0)
+                    entry = stock.get('entry', 0)
+                    stop = stock.get('stop', 0)
+                    reason = stock.get('removal_reason', 'Unknown')
+
+                    st.markdown(f"""
+                    **{symbol}** - ${current:.2f}
+                    - Entry: ${entry:.2f} | Stop: ${stop:.2f}
+                    - Reason: {reason}
+                    """)
+                    st.divider()
+
+                st.success(f"✅ **{len(to_keep)} stocks** will remain in watchlist")
+            else:
+                st.success("✅ All stocks are valid! Nothing to remove.")
+                st.info(f"📊 {len(to_keep)} stocks in watchlist")
+
+        except Exception as e:
+            st.error(f"Error previewing cleanup: {e}")
+
+# Manual cleanup button
+st.markdown("### 🧹 Run Cleanup Now")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("🧹 Clean Watchlist Now", type="primary", use_container_width=True):
+        with st.spinner("Cleaning watchlist..."):
+            try:
+                results = clean_watchlist_daily(TIINGO_TOKEN, send_email=False)
+
+                removed = results['removed']
+                kept = results['kept']
+
+                if removed:
+                    st.success(f"✅ Cleanup complete! Removed {len(removed)} stocks, kept {len(kept)} stocks")
+
+                    with st.expander("📋 View Removed Stocks"):
+                        for stock in removed:
+                            symbol = stock['symbol']
+                            reason = stock.get('removal_reason', 'Unknown')
+                            st.markdown(f"- **{symbol}**: {reason}")
+
+                    st.info("🔄 Refresh the page to see updated watchlist")
+
+                    if st.button("🔄 Refresh Page"):
+                        st.rerun()
+                else:
+                    st.success("✅ All stocks are valid! Nothing was removed.")
+                    st.info(f"📊 {len(kept)} stocks remain in watchlist")
+
+            except Exception as e:
+                st.error(f"Error during cleanup: {e}")
+
+with col2:
+    if st.button("📧 Clean & Email Report", use_container_width=True):
+        with st.spinner("Cleaning watchlist and sending email..."):
+            try:
+                results = clean_watchlist_daily(TIINGO_TOKEN, send_email=True)
+
+                removed = results['removed']
+                kept = results['kept']
+
+                if removed:
+                    st.success(f"✅ Cleanup complete! Removed {len(removed)} stocks, kept {len(kept)} stocks")
+                    st.success("📧 Email report sent!")
+
+                    if st.button("🔄 Refresh Page", key="refresh2"):
+                        st.rerun()
+                else:
+                    st.success("✅ All stocks are valid! Nothing was removed.")
+                    st.info("📧 No email sent (nothing to report)")
+
+            except Exception as e:
+                st.error(f"Error during cleanup: {e}")
+
+# Cleanup configuration
+st.divider()
+st.markdown("### ⚙️ Cleanup Settings")
+
+with st.expander("Configure Cleanup Rules", expanded=False):
+    st.markdown("""
+    **Current Settings:**
+    - Stop Loss Buffer: 0% (remove immediately when below stop)
+    - Runaway Threshold: 10% above entry
+    - Dead Money Period: 14 days
+    - Dead Money Threshold: <2% movement
+
+    💡 These settings can be adjusted in `utils/watchlist_hygiene.py`
+    """)
 
