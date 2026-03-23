@@ -283,7 +283,8 @@ st.markdown("## 🤖 Export for Claude Analysis")
 st.caption("Copy your watchlist to paste into Claude for AI analysis")
 
 if st.button("📋 Generate Claude Export", use_container_width=True):
-    watchlist = load_watchlist_enhanced()
+    # Load from watchlist_enhanced.json which has entry/stop/target data
+    watchlist = load_json("data/watchlist_enhanced.json", default=[])
 
     if watchlist:
         # Build formatted text for Claude
@@ -317,14 +318,20 @@ Please analyze my swing trading watchlist and provide insights.
                 if risk > 0:
                     rr = f"{reward/risk:.2f}:1"
 
+            # Format prices
+            entry_str = f"${entry:.2f}" if entry else "N/A"
+            stop_str = f"${stop:.2f}" if stop else "N/A"
+            target_str = f"${target:.2f}" if target else "N/A"
+            notes_str = notes if notes else "None"
+
             export_text += f"""
 ### {i}. {symbol}
 - **Setup Type:** {setup}
-- **Entry:** ${entry:.2f if entry else 'N/A'}
-- **Stop Loss:** ${stop:.2f if stop else 'N/A'}
-- **Target:** ${target:.2f if target else 'N/A'}
+- **Entry:** {entry_str}
+- **Stop Loss:** {stop_str}
+- **Target:** {target_str}
 - **Risk:Reward:** {rr}
-- **Notes:** {notes if notes else 'None'}
+- **Notes:** {notes_str}
 
 """
 
