@@ -59,15 +59,16 @@ TIINGO_TIMEOUT = 15  # seconds
 SCAN_LOOKBACK_DAYS = 120  # how many days of Tiingo history to load
 SCAN_TIMEOUT = 15  # seconds for API requests
 
-# Concurrency settings (reduced to prevent rate limiting)
-MAX_WORKERS = 2  # number of threads for concurrent scanning (reduced from 8)
-REQUEST_PAUSE_S = 1.5  # delay between batches to be nice to API (increased from 0.25)
-BATCH_TICKER_COUNT = 20  # tickers per batch (reduced from 50)
+# Concurrency settings (AGGRESSIVE - maximize speed)
+MAX_WORKERS = 10  # number of threads for concurrent scanning (was 8 originally)
+REQUEST_PAUSE_S = 0.1  # minimal delay between batches (was 0.25 originally)
+BATCH_TICKER_COUNT = 50  # tickers per batch (back to original)
 
 # Rate limiting settings (Tiingo Power Plan: 50 requests/minute)
-RATE_LIMIT_MAX_REQUESTS = 50  # maximum requests per window
+# NOTE: Rate limiter will handle throttling, these are just batch settings
+RATE_LIMIT_MAX_REQUESTS = 50  # use full quota
 RATE_LIMIT_WINDOW_SECONDS = 60  # time window in seconds
-RATE_LIMIT_BUFFER = 5  # keep 5 requests as buffer (use max 45/50)
+RATE_LIMIT_BUFFER = 0  # no buffer - use all 50
 
 # Default filter values
 DEFAULT_MIN_PRICE = 5.0

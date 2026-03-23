@@ -13,7 +13,7 @@ from typing import Dict, Any, Optional
 
 # Simple rate limiter for Yahoo Finance (more lenient than Tiingo)
 _last_yahoo_request_time = 0
-_yahoo_min_delay = 0.5  # 500ms between requests (max 2 per second)
+_yahoo_min_delay = 0.2  # 200ms between requests (max 5 per second - Yahoo can handle this)
 
 
 def _yahoo_rate_limit():
