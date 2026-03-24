@@ -27,6 +27,7 @@ from utils.indicators import (
 )
 from utils.storage import load_json, save_json
 from utils.yahoo_fundamentals import get_yahoo_fundamentals, calculate_yahoo_fundamental_score
+from utils.target_calculator import calculate_scanner_target
 
 # ---------------- Universe Loader ----------------
 from utils.universe_builder import CACHE_PATH
@@ -422,9 +423,17 @@ def scanner_ui(TIINGO_TOKEN):
             else:
                 setup_context = trend_context
 
-            # --- Target / Stop (ATR-based) ---
+            # --- Target / Stop (Fibonacci-based from RECENT 20-bar swing) ---
             stop = px - atr * 1.5
-            target = px + (px - stop) * 2.0
+
+            # Use Fibonacci extension target calculator with SHORT recent swing
+            target, rr_ratio, weak_rr = calculate_scanner_target(
+                df=df,
+                current_price=px,
+                stop_loss=stop,
+                setup_type=setup or "Breakout",
+                lookback_bars=20  # SHORT recent swing (15-20 bars)
+            )
             
                     # --- Smart Score calculation ---
             smart_score = 50  # neutral baseline
@@ -546,6 +555,8 @@ def scanner_ui(TIINGO_TOKEN):
                 "Setup": setup or "NearMiss",
                 "Stop": round(actual_stop, 2),
                 "Target": round(actual_target, 2),
+                "RR_Ratio": round(rr_ratio, 2),
+                "WeakRR": weak_rr,  # Flag if R:R was below 2:1
                 "SmartScore": smart_score,
                 "NearMiss": near_miss,
                 "NearType": near_type,
@@ -1250,6 +1261,13 @@ def scanner_ui(TIINGO_TOKEN):
                             if earnings_badge:
                                 card_html += f"<br/><span style='font-size:0.85rem;'>{earnings_badge}</span>"
 
+                            # Build R:R badge
+                            rr_badge = ""
+                            rr_color = "#16a34a"  # Green by default
+                            if rec.get('WeakRR'):
+                                rr_badge = "⚠️ Weak R:R (was <2:1, adjusted to 2:1)"
+                                rr_color = "#f59e0b"  # Orange for weak R:R
+
                             card_html += f"""
                                 <div style="font-size:0.9rem;opacity:0.9;margin-top:4px;">
                                     Setup: <b>{rec['Setup']}</b> &nbsp;|&nbsp; RSI14: <b>{rec['RSI14']}</b> &nbsp;|&nbsp; Vol: <b>{rec['Volume']:,}</b><br/>
@@ -1257,9 +1275,12 @@ def scanner_ui(TIINGO_TOKEN):
                                 </div>
                                 <div style="margin-top:6px;font-size:0.95rem;line-height:1.4;">
                                     🛡️ Stop: <b>${rec['Stop']:.2f}</b><br/>
-                                    🎯 <b style="color:#16a34a;">Target: ${rec['Target']:.2f}</b>
+                                    🎯 <b style="color:{rr_color};">Target: ${rec['Target']:.2f}</b> (R:R {rec.get('RR_Ratio', 0):.1f}:1)
                                 </div>
                             """
+
+                            if rr_badge:
+                                card_html += f"<div style='margin-top:4px;font-size:0.85rem;color:#f59e0b;'>{rr_badge}</div>"
 
                             if favored_badge:
                                 card_html += f"<div style='margin-top:4px;font-size:0.85rem;opacity:0.85;color:#22c55e;'>{favored_badge}</div>"

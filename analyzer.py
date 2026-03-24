@@ -21,6 +21,7 @@ from utils.relative_strength import (
 )
 from utils.multi_timeframe import get_multi_timeframe_analysis, format_mtf_display
 from gpt_export import build_trade_plan_for_gpt
+from utils.target_calculator import calculate_fibonacci_target, format_target_display
 
 # ===================== MOBILE OPTIMIZATION: DATA CACHING =====================
 # Cache data for 5 minutes to prevent re-fetching when switching between apps
@@ -1980,11 +1981,21 @@ Coach me on timing, confirmation, and risk management."""
         proposed_stop = entry_price * 0.97
     stop = max(0.01, proposed_stop)
 
-    # --- Target: R-multiple vs recent swing-high (take farther if above entry) ---
+    # --- Target: Fibonacci 1.618 extension from RECENT swing (15-20 bars) ---
     risk_per_share = max(1e-6, entry_price - stop)
-    rr_target = entry_price + rr_ratio * risk_per_share
-    prior_high = float(high.tail(10).max())
-    target = max(rr_target, prior_high) if prior_high > entry_price else rr_target
+
+    # Calculate Fibonacci-based target from RECENT swing (not long-term trend)
+    target_data = calculate_fibonacci_target(
+        df=df,
+        entry_price=entry_price,
+        stop_loss=stop,
+        lookback_bars=20,  # SHORT recent swing (15-20 bars, not 60!)
+        min_rr_ratio=2.0,  # Minimum 2:1 R:R floor
+        max_rr_ratio=2.5   # Maximum 2.5:1 R:R cap (25% above entry)
+    )
+
+    target = target_data["final_target"]
+    actual_rr = target_data["final_rr"]
 
     # --- Sizing & reward ---
     risk_amt = account * (risk_pct / 100.0)
@@ -2008,11 +2019,44 @@ Coach me on timing, confirmation, and risk management."""
         st.metric("Stop Loss", f"${stop:.2f}")
         st.metric("Target Price", f"${target:.2f}")
     with c3:
-        st.metric("R:R Ratio", f"{rr_ratio:.2f}")
+        st.metric("R:R Ratio", f"{actual_rr:.2f}:1")
         st.metric("Shares to Buy", f"{shares}")
     with c4:
         st.metric("ETA to Target", f"{eta_days:.1f} days" if not np.isnan(eta_days) else "—")
         st.metric("Potential Reward ($)", f"{reward:,.2f}")
+
+    # --- Detailed Target Breakdown ---
+    with st.expander("📊 Target Calculation Details", expanded=False):
+        # Show warning if target was adjusted
+        if target_data['warning']:
+            st.warning(f"⚠️ {target_data['warning']}")
+        else:
+            st.success("✅ Fibonacci target is in acceptable range (2:1 to 2.5:1)")
+
+        col_a, col_b = st.columns(2)
+
+        with col_a:
+            st.markdown("### Fibonacci Extension Target")
+            st.caption(f"**From recent {target_data['lookback_bars']}-bar swing**")
+            st.metric("Fib 1.618 Target", f"${target_data['fib_target']:.2f}")
+            st.metric("Fib R:R Ratio", f"{target_data['fib_rr']:.2f}:1")
+
+            st.caption(f"**Recent Swing Analysis:**")
+            st.caption(f"- Swing High: ${target_data['swing_high']:.2f}")
+            st.caption(f"- Swing Low: ${target_data['swing_low']:.2f}")
+            st.caption(f"- Swing Range: ${target_data['swing_range']:.2f}")
+
+        with col_b:
+            st.markdown("### Target Boundaries")
+            st.metric("Min 2:1 Target (Floor)", f"${target_data['min_target']:.2f}")
+            st.metric("Max 2.5:1 Target (Cap)", f"${target_data['capped_target']:.2f}")
+            st.metric("**Final Target Used**", f"${target_data['final_target']:.2f}")
+
+            st.caption("**Logic:**")
+            st.caption("1. Calculate Fib 1.618 from recent 15-20 bar swing")
+            st.caption("2. Cap at 25% above entry (2.5:1 max)")
+            st.caption("3. Floor at 2:1 minimum R:R")
+            st.caption("4. Use Fib if in range, else use boundary")
 
     st.caption(
         "Context-aware setups: trend (EMA10/20/50), consolidation filter (tight range + flat MACD/RSI), "
