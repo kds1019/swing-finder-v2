@@ -133,7 +133,6 @@ def get_premarket_price(symbol: str, token: str):
 # ============================================================================
 
 st.title("🌅 Pre-Market Dashboard")
-st.error("🚨 DEBUG VERSION v2.0 - If you see this, new code is deployed!")
 
 # Market status banner
 market_status = get_market_status()
@@ -232,9 +231,6 @@ with col2:
     st.markdown("### 📋 Watchlist Pre-Market")
     st.caption("All watchlist stocks with current prices")
 
-    # DEBUG: Show we reached this section
-    st.info("🔍 DEBUG: Loading watchlist...")
-
     try:
         # Load enhanced watchlist (try Gist first, then local)
         gist_id = st.secrets.get("GIST_ID") or os.getenv("GIST_ID")
@@ -243,16 +239,12 @@ with col2:
         if gist_id:
             try:
                 enhanced_wl = load_gist_json(gist_id, "watchlist_enhanced.json")
-                if enhanced_wl:
-                    st.caption(f"✅ Loaded {len(enhanced_wl)} stocks from Gist")
-            except Exception as e:
-                st.caption(f"⚠️ Gist load failed: {str(e)[:100]}")
+            except:
+                pass
 
         # Fallback to local file
         if not enhanced_wl:
             enhanced_wl = load_json("data/watchlist_enhanced.json", default=[])
-            if enhanced_wl:
-                st.caption(f"✅ Loaded {len(enhanced_wl)} stocks from local file")
 
         # If enhanced watchlist is empty, try to populate from Scanner watchlist
         if not enhanced_wl:
@@ -280,13 +272,6 @@ with col2:
                             'setup_type': 'N/A',
                             'notes': f'From Scanner watchlist: {wl_name}'
                         })
-
-        # DEBUG: Show what we loaded (BEFORE the if check!)
-        st.warning(f"🔍 DEBUG: enhanced_wl type = {type(enhanced_wl)}, length = {len(enhanced_wl) if enhanced_wl else 0}")
-        if enhanced_wl and len(enhanced_wl) > 0:
-            st.warning(f"🔍 DEBUG: First stock = {enhanced_wl[0]}")
-        else:
-            st.error("🔍 DEBUG: enhanced_wl is EMPTY or None!")
 
         if enhanced_wl:
             for item in enhanced_wl[:15]:  # Limit to 15
@@ -315,11 +300,6 @@ with col2:
 
                     st.markdown(f"**{symbol}** ${current:.2f} ({gap_pct:+.1f}%) {gap_emoji}")
                     st.caption(f"{setup} | Entry: {entry_str} {near_entry}")
-
-                    # Show hint if entry not set
-                    if not entry:
-                        st.caption("💡 Add entry/stop/target in Watchlist Manager")
-
                     st.divider()
                 else:
                     st.markdown(f"**{symbol}** - Loading...")
@@ -337,9 +317,6 @@ with col3:
     st.markdown("### 🎯 Today's Triggers")
     st.caption("Stocks near entry points")
 
-    # DEBUG: Show we reached this section
-    st.info("🔍 DEBUG: Loading triggers...")
-
     try:
         # Load enhanced watchlist (try Gist first, then local)
         gist_id = st.secrets.get("GIST_ID") or os.getenv("GIST_ID")
@@ -348,16 +325,12 @@ with col3:
         if gist_id:
             try:
                 enhanced_wl = load_gist_json(gist_id, "watchlist_enhanced.json")
-                if enhanced_wl:
-                    st.caption(f"✅ Loaded {len(enhanced_wl)} stocks from Gist")
-            except Exception as e:
-                st.caption(f"⚠️ Gist load failed: {str(e)[:100]}")
+            except:
+                pass
 
         # Fallback to local file
         if not enhanced_wl:
             enhanced_wl = load_json("data/watchlist_enhanced.json", default=[])
-            if enhanced_wl:
-                st.caption(f"✅ Loaded {len(enhanced_wl)} stocks from local file")
 
         # If enhanced watchlist is empty, try to populate from Scanner watchlist
         if not enhanced_wl:
@@ -385,13 +358,6 @@ with col3:
                             'setup_type': 'N/A',
                             'notes': f'From Scanner watchlist: {wl_name}'
                         })
-
-        # DEBUG: Show what we loaded (BEFORE the if check!)
-        st.warning(f"🔍 DEBUG: enhanced_wl type = {type(enhanced_wl)}, length = {len(enhanced_wl) if enhanced_wl else 0}")
-        if enhanced_wl and len(enhanced_wl) > 0:
-            st.warning(f"🔍 DEBUG: First stock = {enhanced_wl[0]}")
-        else:
-            st.error("🔍 DEBUG: enhanced_wl is EMPTY or None!")
 
         if enhanced_wl:
             triggers = []
