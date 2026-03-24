@@ -181,12 +181,13 @@ def scanner_ui(TIINGO_TOKEN):
     debug_button = st.sidebar.button("🔍 Debug This Ticker")
 
     # Map sensitivity to thresholds
+    # Pullback RSI range: 35-50 (healthy pullback zone per Claude's recommendation)
     sensitivity_map = {
-        1: {"breakout_rsi": 65, "breakout_band": 0.70, "pullback_rsi_max": 40, "pullback_band": 0.30},
-        2: {"breakout_rsi": 60, "breakout_band": 0.65, "pullback_rsi_max": 45, "pullback_band": 0.35},
-        3: {"breakout_rsi": 55, "breakout_band": 0.55, "pullback_rsi_max": 50, "pullback_band": 0.45},
-        4: {"breakout_rsi": 52, "breakout_band": 0.50, "pullback_rsi_max": 52, "pullback_band": 0.50},
-        5: {"breakout_rsi": 50, "breakout_band": 0.45, "pullback_rsi_max": 55, "pullback_band": 0.55},
+        1: {"breakout_rsi": 65, "breakout_band": 0.70, "pullback_rsi_min": 35, "pullback_rsi_max": 45, "pullback_band": 0.30},
+        2: {"breakout_rsi": 60, "breakout_band": 0.65, "pullback_rsi_min": 35, "pullback_rsi_max": 48, "pullback_band": 0.35},
+        3: {"breakout_rsi": 55, "breakout_band": 0.55, "pullback_rsi_min": 35, "pullback_rsi_max": 50, "pullback_band": 0.45},
+        4: {"breakout_rsi": 52, "breakout_band": 0.50, "pullback_rsi_min": 35, "pullback_rsi_max": 50, "pullback_band": 0.50},
+        5: {"breakout_rsi": 50, "breakout_band": 0.45, "pullback_rsi_min": 35, "pullback_rsi_max": 50, "pullback_band": 0.55},
     }
     thresholds = sensitivity_map[sensitivity]
 
@@ -378,12 +379,13 @@ def scanner_ui(TIINGO_TOKEN):
                 # Confirmed setups (apply sensitivity + market bias adjustments)
                 breakout_rsi_threshold = thresholds["breakout_rsi"] + rsi_buffer
                 breakout_band_threshold = thresholds["breakout_band"] + band_buffer
-                pullback_rsi_threshold = thresholds["pullback_rsi_max"] + rsi_buffer
+                pullback_rsi_min = thresholds["pullback_rsi_min"] + rsi_buffer
+                pullback_rsi_max = thresholds["pullback_rsi_max"] + rsi_buffer
                 pullback_band_threshold = thresholds["pullback_band"] + band_buffer
 
                 if mode in ["Breakout", "Both"] and rsi > breakout_rsi_threshold and band > breakout_band_threshold:
                     setup = "Breakout"
-                elif mode in ["Pullback", "Both"] and rsi < pullback_rsi_threshold and band <= pullback_band_threshold and px <= ema20:
+                elif mode in ["Pullback", "Both"] and pullback_rsi_min <= rsi <= pullback_rsi_max and band <= pullback_band_threshold and px <= ema20:
                     setup = "Pullback"
 
 
@@ -451,6 +453,18 @@ def scanner_ui(TIINGO_TOKEN):
                 smart_score += 10
             else:
                 smart_score -= 10
+
+            # Volume signal (add to smart score)
+            # Volume analysis is done later, but we can use relative volume here
+            vol_20_avg = df['Volume'].tail(20).mean()
+            rel_vol = vol / vol_20_avg if vol_20_avg > 0 else 1.0
+
+            if rel_vol >= 1.5:
+                smart_score += 15  # High volume - strong conviction
+            elif rel_vol >= 1.0:
+                smart_score += 5   # Above average volume - good
+            elif rel_vol < 0.8:
+                smart_score -= 10  # Low volume - weak conviction
 
             # If Smart Mode is active and favored sectors exist
             # NOTE: Sector fetching moved to post-scan to avoid rate limiting
