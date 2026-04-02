@@ -9,6 +9,7 @@ import json
 from datetime import datetime
 from utils.storage import load_json, save_json, load_gist_json, save_gist_json
 from utils.watchlist_hygiene import get_cleanup_preview, clean_watchlist_daily
+from utils.claude_analyzer import analyze_watchlist_with_claude
 
 # Page config
 st.set_page_config(page_title="Watchlist Manager - SwingFinder", page_icon="📋", layout="wide")
@@ -412,6 +413,64 @@ Thank you!
         st.info("💡 Tip: You can also ask Claude specific questions about individual stocks or setups.")
     else:
         st.warning("No stocks in watchlist to export")
+
+st.divider()
+
+# ============================================================================
+# AI WATCHLIST ANALYZER (CLAUDE)
+# ============================================================================
+
+st.markdown("## 🤖 AI Watchlist Analysis (Claude)")
+st.caption("Get Claude's top 3-5 stock picks from your watchlist with real-time market data")
+
+# Check if Claude API key is configured
+anthropic_key = st.secrets.get("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+tiingo_token = st.secrets.get("TIINGO_TOKEN") or os.getenv("TIINGO_TOKEN")
+
+if not anthropic_key:
+    st.warning("⚠️ Claude API not configured. Add ANTHROPIC_API_KEY to Streamlit secrets to enable AI analysis.")
+    with st.expander("🔧 How to Add Claude API Key"):
+        st.markdown("""
+        1. Go to Streamlit Cloud → App Settings → Secrets
+        2. Add this line:
+        ```
+        ANTHROPIC_API_KEY = "sk-ant-your-key-here"
+        ```
+        3. Save and redeploy
+        """)
+else:
+    st.success("✅ Claude AI enabled")
+
+    if st.button("🤖 Analyze Watchlist with AI", type="primary", use_container_width=True):
+        watchlist = load_json("data/watchlist_enhanced.json", default=[])
+
+        if not watchlist:
+            st.error("❌ No stocks in watchlist to analyze")
+        elif not tiingo_token:
+            st.error("❌ Tiingo API token not configured")
+        else:
+            with st.spinner("🤖 Claude is analyzing your watchlist with real-time data..."):
+                # Call Claude analyzer
+                analysis = analyze_watchlist_with_claude(
+                    watchlist=watchlist,
+                    token=tiingo_token,
+                    api_key=anthropic_key
+                )
+
+                # Display results
+                st.markdown("### 🎯 Claude's Analysis")
+                st.markdown(analysis)
+
+                # Save to session state for persistence
+                st.session_state['claude_analysis'] = analysis
+                st.session_state['claude_analysis_time'] = datetime.now().strftime("%Y-%m-%d %I:%M %p")
+
+    # Show previous analysis if available
+    if 'claude_analysis' in st.session_state:
+        st.divider()
+        st.caption(f"💾 Last analysis: {st.session_state.get('claude_analysis_time', 'Unknown')}")
+        with st.expander("📊 View Last Analysis", expanded=False):
+            st.markdown(st.session_state['claude_analysis'])
 
 st.divider()
 st.markdown("## 🧹 Watchlist Auto-Cleanup")
