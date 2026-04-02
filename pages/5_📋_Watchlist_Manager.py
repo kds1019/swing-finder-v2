@@ -363,8 +363,8 @@ else:
     if st.button("🤖 Analyze Watchlist with AI", type="primary", use_container_width=True):
         watchlist = load_json("data/watchlist_enhanced.json", default=[])
 
-    if not watchlist:
-                st.error("❌ No stocks in watchlist to analyze")
+        if not watchlist:
+            st.error("❌ No stocks in watchlist to analyze")
         elif not tiingo_token:
             st.error("❌ Tiingo API token not configured")
         else:
@@ -390,9 +390,6 @@ else:
         st.caption(f"💾 Last analysis: {st.session_state.get('claude_analysis_time', 'Unknown')}")
         with st.expander("📊 View Last Analysis", expanded=False):
             st.markdown(st.session_state['claude_analysis'])
-
-        if not watchlist:
-            st.error("❌ No stocks in watchlist to analyze")
         elif not tiingo_token:
             st.error("❌ Tiingo API token not configured")
         else:
