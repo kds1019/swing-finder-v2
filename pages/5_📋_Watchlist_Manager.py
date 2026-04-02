@@ -424,15 +424,25 @@ st.markdown("## 🤖 AI Watchlist Analysis (Claude)")
 st.caption("Get Claude's top 3-5 stock picks from your watchlist with real-time market data")
 
 # Check if Claude API key is configured
-anthropic_key = st.secrets.get("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+# Try multiple possible key names for flexibility
+anthropic_key = (
+    st.secrets.get("swingfinder_key") or
+    st.secrets.get("ANTHROPIC_API_KEY") or
+    os.getenv("ANTHROPIC_API_KEY") or
+    os.getenv("swingfinder_key")
+)
 tiingo_token = st.secrets.get("TIINGO_TOKEN") or os.getenv("TIINGO_TOKEN")
 
 if not anthropic_key:
-    st.warning("⚠️ Claude API not configured. Add ANTHROPIC_API_KEY to Streamlit secrets to enable AI analysis.")
+    st.warning("⚠️ Claude API not configured. Add your Claude API key to Streamlit secrets to enable AI analysis.")
     with st.expander("🔧 How to Add Claude API Key"):
         st.markdown("""
         1. Go to Streamlit Cloud → App Settings → Secrets
-        2. Add this line:
+        2. Add this line (use either key name):
+        ```
+        swingfinder_key = "sk-ant-your-key-here"
+        ```
+        OR
         ```
         ANTHROPIC_API_KEY = "sk-ant-your-key-here"
         ```
