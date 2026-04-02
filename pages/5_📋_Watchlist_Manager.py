@@ -361,7 +361,19 @@ else:
     st.success("✅ Claude AI enabled")
 
     if st.button("🤖 Analyze Watchlist with AI", type="primary", use_container_width=True):
-        watchlist = load_json("data/watchlist_enhanced.json", default=[])
+        # Load watchlist (try Gist first for Streamlit Cloud, then local)
+        gist_id = st.secrets.get("GIST_ID") or os.getenv("GIST_ID")
+        watchlist = None
+
+        if gist_id:
+            try:
+                watchlist = load_gist_json(gist_id, "watchlist_enhanced.json")
+            except:
+                pass
+
+        # Fallback to local file
+        if not watchlist:
+            watchlist = load_json("data/watchlist_enhanced.json", default=[])
 
         if not watchlist:
             st.error("❌ No stocks in watchlist to analyze")
