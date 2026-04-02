@@ -426,7 +426,16 @@ def scanner_ui(TIINGO_TOKEN):
                 setup_context = trend_context
 
             # --- Target / Stop (Fibonacci-based from RECENT 20-bar swing) ---
-            stop = px - atr * 1.5
+            # Use same stop logic as Analyzer for consistency
+            swing_low = float(df['Low'].tail(10).min())
+            atr_stop = ema20 - 1.3 * atr
+            proposed_stop = min(swing_low, atr_stop)
+
+            # Ensure stop is below entry
+            if proposed_stop >= px:
+                proposed_stop = px - 1.2 * atr
+
+            stop = max(0.01, proposed_stop)
 
             # Use Fibonacci extension target calculator with SHORT recent swing
             target, rr_ratio, weak_rr = calculate_scanner_target(
