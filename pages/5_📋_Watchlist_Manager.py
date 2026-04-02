@@ -390,31 +390,6 @@ else:
         st.caption(f"💾 Last analysis: {st.session_state.get('claude_analysis_time', 'Unknown')}")
         with st.expander("📊 View Last Analysis", expanded=False):
             st.markdown(st.session_state['claude_analysis'])
-        elif not tiingo_token:
-            st.error("❌ Tiingo API token not configured")
-        else:
-            with st.spinner("🤖 Claude is analyzing your watchlist with real-time data..."):
-                # Call Claude analyzer
-                analysis = analyze_watchlist_with_claude(
-                    watchlist=watchlist,
-                    token=tiingo_token,
-                    api_key=anthropic_key
-                )
-
-                # Display results
-                st.markdown("### 🎯 Claude's Analysis")
-                st.markdown(analysis)
-
-                # Save to session state for persistence
-                st.session_state['claude_analysis'] = analysis
-                st.session_state['claude_analysis_time'] = datetime.now().strftime("%Y-%m-%d %I:%M %p")
-
-    # Show previous analysis if available
-    if 'claude_analysis' in st.session_state:
-        st.divider()
-        st.caption(f"💾 Last analysis: {st.session_state.get('claude_analysis_time', 'Unknown')}")
-        with st.expander("📊 View Last Analysis", expanded=False):
-            st.markdown(st.session_state['claude_analysis'])
 
 st.divider()
 st.markdown("## 🧹 Watchlist Auto-Cleanup")
