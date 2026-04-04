@@ -63,34 +63,20 @@ def calculate_fibonacci_target(
     fib_reward = abs(fib_target - entry_price)
     fib_rr = fib_reward / risk if risk > 0 else 0
 
-    # Calculate minimum 2:1 R:R target (floor)
+    # Calculate minimum 2:1 R:R target (floor only - no ceiling!)
     min_target = entry_price + (min_rr_ratio * risk)
 
-    # Calculate maximum 2.5:1 R:R target (ceiling - 25% above entry cap)
-    max_target_by_rr = entry_price + (max_rr_ratio * risk)
-    max_target_by_percent = entry_price * 1.25  # 25% above entry
-    capped_target = min(max_target_by_rr, max_target_by_percent)
-
-    # FINAL TARGET LOGIC (in priority order):
+    # FINAL TARGET LOGIC (simplified - no caps!):
     warning = ""
 
-    # Step 1: Check if Fib target exceeds 25% above entry
-    if fib_target > entry_price * 1.25:
-        # Too far out - use 2.5:1 fallback
-        final_target = capped_target
-        final_rr = (final_target - entry_price) / risk if risk > 0 else 0
-        warning = f"Fib target too far ({fib_rr:.1f}:1) - capped at 2.5:1 (25% max)"
-
-    # Step 2: Check if Fib target is below 2:1 minimum
-    elif fib_rr < min_rr_ratio:
+    # Only check if Fib target is below 2:1 minimum
+    if fib_rr < min_rr_ratio:
         # Too close - use 2:1 minimum
         final_target = min_target
         final_rr = min_rr_ratio
         warning = f"Fib target too close ({fib_rr:.1f}:1) - using 2:1 minimum"
-
-    # Step 3: Fib target is in acceptable range (2:1 to 2.5:1)
     else:
-        # Use Fibonacci target as-is
+        # Use Fibonacci target as-is - let it run!
         final_target = fib_target
         final_rr = fib_rr
         warning = ""
@@ -99,7 +85,6 @@ def calculate_fibonacci_target(
         "fib_target": round(fib_target, 2),
         "fib_rr": round(fib_rr, 2),
         "min_target": round(min_target, 2),
-        "capped_target": round(capped_target, 2),
         "final_target": round(final_target, 2),
         "final_rr": round(final_rr, 2),
         "warning": warning,

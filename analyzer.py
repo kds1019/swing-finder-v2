@@ -2047,16 +2047,16 @@ Coach me on timing, confirmation, and risk management."""
             st.caption(f"- Swing Range: ${target_data['swing_range']:.2f}")
 
         with col_b:
-            st.markdown("### Target Boundaries")
+            st.markdown("### Target Logic")
             st.metric("Min 2:1 Target (Floor)", f"${target_data['min_target']:.2f}")
-            st.metric("Max 2.5:1 Target (Cap)", f"${target_data['capped_target']:.2f}")
             st.metric("**Final Target Used**", f"${target_data['final_target']:.2f}")
+            st.metric("Final R:R Ratio", f"{target_data['final_rr']:.2f}:1")
 
             st.caption("**Logic:**")
             st.caption("1. Calculate Fib 1.618 from recent 15-20 bar swing")
-            st.caption("2. Cap at 25% above entry (2.5:1 max)")
-            st.caption("3. Floor at 2:1 minimum R:R")
-            st.caption("4. Use Fib if in range, else use boundary")
+            st.caption("2. Enforce 2:1 minimum R:R floor")
+            st.caption("3. NO CAPS - let Fibonacci extension work!")
+            st.caption("4. Can achieve 3:1, 4:1, 5:1+ R:R on strong trends")
 
     st.caption(
         "Context-aware setups: trend (EMA10/20/50), consolidation filter (tight range + flat MACD/RSI), "
