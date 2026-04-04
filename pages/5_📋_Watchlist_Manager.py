@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 from utils.storage import load_json, save_json, load_gist_json, save_gist_json
 from utils.watchlist_hygiene import get_cleanup_preview, clean_watchlist_daily
-from utils.claude_analyzer import analyze_watchlist_with_claude
+from utils.claude_analyzer import quick_analyze_watchlist, deep_analyze_stocks
 
 # Page config
 st.set_page_config(page_title="Watchlist Manager - SwingFinder", page_icon="📋", layout="wide")
@@ -360,48 +360,94 @@ if not anthropic_key:
 else:
     st.success("✅ Claude AI enabled")
 
-    if st.button("🤖 Analyze Watchlist with AI", type="primary", use_container_width=True):
-        # Load watchlist (try Gist first for Streamlit Cloud, then local)
-        gist_id = st.secrets.get("GIST_ID") or os.getenv("GIST_ID")
-        watchlist = None
+    # Load watchlist first (needed for both options)
+    gist_id = st.secrets.get("GIST_ID") or os.getenv("GIST_ID")
+    watchlist = None
 
-        if gist_id:
-            try:
-                watchlist = load_gist_json(gist_id, "watchlist_enhanced.json")
-            except:
-                pass
+    if gist_id:
+        try:
+            watchlist = load_gist_json(gist_id, "watchlist_enhanced.json")
+        except:
+            pass
 
-        # Fallback to local file
-        if not watchlist:
-            watchlist = load_json("data/watchlist_enhanced.json", default=[])
+    # Fallback to local file
+    if not watchlist:
+        watchlist = load_json("data/watchlist_enhanced.json", default=[])
 
-        if not watchlist:
-            st.error("❌ No stocks in watchlist to analyze")
-        elif not tiingo_token:
-            st.error("❌ Tiingo API token not configured")
-        else:
-            with st.spinner("🤖 Claude is analyzing your watchlist with real-time data..."):
-                # Call Claude analyzer
-                analysis = analyze_watchlist_with_claude(
-                    watchlist=watchlist,
-                    token=tiingo_token,
-                    api_key=anthropic_key
-                )
+    if not watchlist:
+        st.warning("❌ No stocks in watchlist to analyze. Add stocks first!")
+    else:
+        # ===== QUICK ANALYSIS (Haiku - Fast & Cheap) =====
+        st.markdown("### 🚀 Quick Analysis (Fast)")
+        st.caption(f"Analyze all {len(watchlist)} stocks and get top 3-5 picks in seconds (Haiku)")
 
-                # Display results
-                st.markdown("### 🎯 Claude's Analysis")
-                st.markdown(analysis)
+        if st.button("🚀 Quick Analyze All Stocks", use_container_width=True):
+            if not tiingo_token:
+                st.error("❌ Tiingo API token not configured")
+            else:
+                with st.spinner("🚀 Quick analysis in progress..."):
+                    analysis = quick_analyze_watchlist(
+                        watchlist=watchlist,
+                        token=tiingo_token,
+                        api_key=anthropic_key
+                    )
 
-                # Save to session state for persistence
-                st.session_state['claude_analysis'] = analysis
-                st.session_state['claude_analysis_time'] = datetime.now().strftime("%Y-%m-%d %I:%M %p")
+                    st.markdown("### 🎯 Quick Analysis Results")
+                    st.markdown(analysis)
 
-    # Show previous analysis if available
-    if 'claude_analysis' in st.session_state:
+                    st.session_state['quick_analysis'] = analysis
+                    st.session_state['quick_analysis_time'] = datetime.now().strftime("%Y-%m-%d %I:%M %p")
+
+        # Show previous quick analysis
+        if 'quick_analysis' in st.session_state:
+            st.caption(f"💾 Last quick analysis: {st.session_state.get('quick_analysis_time', 'Unknown')}")
+            with st.expander("📊 View Last Quick Analysis", expanded=False):
+                st.markdown(st.session_state['quick_analysis'])
+
         st.divider()
-        st.caption(f"💾 Last analysis: {st.session_state.get('claude_analysis_time', 'Unknown')}")
-        with st.expander("📊 View Last Analysis", expanded=False):
-            st.markdown(st.session_state['claude_analysis'])
+
+        # ===== DEEP ANALYSIS (Sonnet - Detailed) =====
+        st.markdown("### 🧠 Deep Dive Analysis (Detailed)")
+        st.caption("Select specific stocks for in-depth analysis (Sonnet with caching)")
+
+        # Create multiselect for stock selection
+        stock_options = [f"{s.get('symbol', 'N/A')} - ${s.get('entry', 0):.2f}" for s in watchlist]
+        selected_stocks_display = st.multiselect(
+            "Select stocks to deep analyze:",
+            options=stock_options,
+            default=[]
+        )
+
+        if selected_stocks_display:
+            # Map selected display names back to stock dictionaries
+            selected_symbols = [s.split(" - ")[0] for s in selected_stocks_display]
+            selected_stocks = [s for s in watchlist if s.get('symbol') in selected_symbols]
+
+            if st.button(f"🧠 Deep Analyze {len(selected_stocks)} Selected Stock{'s' if len(selected_stocks) > 1 else ''}",
+                        type="primary", use_container_width=True):
+                if not tiingo_token:
+                    st.error("❌ Tiingo API token not configured")
+                else:
+                    with st.spinner(f"🧠 Deep analyzing {len(selected_stocks)} stock(s)... (with prompt caching for cost savings)"):
+                        analysis = deep_analyze_stocks(
+                            selected_stocks=selected_stocks,
+                            token=tiingo_token,
+                            api_key=anthropic_key
+                        )
+
+                        st.markdown(f"### 🎯 Deep Analysis: {', '.join(selected_symbols)}")
+                        st.markdown(analysis)
+
+                        st.session_state['deep_analysis'] = analysis
+                        st.session_state['deep_analysis_time'] = datetime.now().strftime("%Y-%m-%d %I:%M %p")
+                        st.session_state['deep_analysis_stocks'] = selected_symbols
+
+        # Show previous deep analysis
+        if 'deep_analysis' in st.session_state:
+            stocks_analyzed = st.session_state.get('deep_analysis_stocks', [])
+            st.caption(f"💾 Last deep analysis: {', '.join(stocks_analyzed)} at {st.session_state.get('deep_analysis_time', 'Unknown')}")
+            with st.expander("📊 View Last Deep Analysis", expanded=False):
+                st.markdown(st.session_state['deep_analysis'])
 
 st.divider()
 st.markdown("## 🧹 Watchlist Auto-Cleanup")

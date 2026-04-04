@@ -86,86 +86,197 @@ def get_stock_data_for_claude(symbol: str, stock_info: Dict, token: str) -> Dict
         return None
 
 
-def analyze_watchlist_with_claude(watchlist: List[Dict], token: str, api_key: str) -> str:
+def quick_analyze_watchlist(watchlist: List[Dict], token: str, api_key: str) -> str:
     """
-    Send watchlist data to Claude for analysis and get top 3-5 recommendations.
-    
+    Quick analysis of entire watchlist using Haiku (fast & cheap).
+    Returns top 3-5 picks with brief reasoning.
+
     Args:
         watchlist: Enhanced watchlist with entry/stop/target
         token: Tiingo API token
         api_key: Anthropic API key
-    
+
     Returns:
-        Claude's analysis as formatted text
+        Claude's quick analysis (Haiku)
     """
     try:
         # Fetch real-time data for all stocks
         stocks_data = []
-        for stock in watchlist[:20]:  # Limit to 20 stocks to avoid token limits
+        for stock in watchlist[:20]:  # Limit to 20 stocks
             symbol = stock.get('symbol')
             if not symbol:
                 continue
-            
+
             data = get_stock_data_for_claude(symbol, stock, token)
             if data:
                 stocks_data.append(data)
-        
+
         if not stocks_data:
             return "❌ No stock data available to analyze."
-        
-        # Build prompt for Claude
-        prompt = f"""You are an expert swing trading analyst. I need you to analyze my watchlist and recommend the TOP 3-5 stocks to trade TODAY.
 
-Here is my watchlist with current market data:
+        # Build prompt for quick analysis
+        prompt = f"""You are a swing trading analyst. Quickly analyze this watchlist and give me the TOP 3-5 stocks to trade TODAY.
+
+WATCHLIST ({len(stocks_data)} stocks):
 
 """
-        
+
         for i, stock in enumerate(stocks_data, 1):
-            prompt += f"""
-{i}. {stock['symbol']} - ${stock['current_price']}
-   Setup Type: {stock['setup_type']}
-   Entry: ${stock['entry']:.2f} | Stop: ${stock['stop']:.2f} | Target: ${stock['target']:.2f}
-   Risk:Reward: {stock['rr_ratio']:.2f}:1
-   Gap: {stock['gap_percent']:+.1f}%
-   Volume: {stock['volume_ratio']:.1f}x average
-   RSI: {stock['rsi']:.1f}
-   Last 5 closes: {stock['recent_closes']}
-   Notes: {stock['notes']}
+            prompt += f"""{i}. {stock['symbol']} ${stock['current_price']} | {stock['setup_type']} | Entry: ${stock['entry']:.2f} Stop: ${stock['stop']:.2f} Target: ${stock['target']:.2f} | R:R: {stock['rr_ratio']:.1f}:1 | Gap: {stock['gap_percent']:+.1f}% | Vol: {stock['volume_ratio']:.1f}x | RSI: {stock['rsi']:.0f}
 """
-        
+
         prompt += """
 
-Please analyze these stocks and provide:
+Provide:
+1. Top 3-5 picks (ranked)
+2. Brief reason for each (1-2 sentences)
+3. Position size (full/half/small)
+4. Stocks to avoid
 
-1. **Your Top 3-5 Picks** (ranked from best to worst)
-2. **For each pick, explain:**
-   - Why you chose it (setup quality, R:R, volume, momentum)
-   - Entry confirmation or wait signal
-   - Any risks or concerns
-   - Position sizing suggestion (full size, half size, small size)
+Be concise. Focus on actionable insights."""
 
-3. **Stocks to AVOID** from this list and why
-
-Be concise but thorough. Focus on actionable insights for swing trading (1-2 week holds).
-"""
-        
-        # Call Claude API
+        # Call Claude API with Haiku (fast & cheap)
         client = anthropic.Anthropic(api_key=api_key)
-        
+
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2000,
+            model="claude-3-5-haiku-20241022",  # Haiku for speed
+            max_tokens=1000,
             messages=[
                 {"role": "user", "content": prompt}
             ]
         )
-        
-        # Extract response
+
         response_text = message.content[0].text
-        
         return response_text
-    
+
     except Exception as e:
         logger.error(f"Claude API error: {e}")
         return f"❌ Error analyzing watchlist: {str(e)}"
+
+
+def deep_analyze_stocks(selected_stocks: List[Dict], token: str, api_key: str) -> str:
+    """
+    Deep analysis of selected stocks using Sonnet (detailed & thorough).
+    With prompt caching for cost savings on repeated analyses.
+
+    Args:
+        selected_stocks: List of selected stocks to analyze in detail
+        token: Tiingo API token
+        api_key: Anthropic API key
+
+    Returns:
+        Claude's deep analysis (Sonnet with caching)
+    """
+    try:
+        # Fetch real-time data for selected stocks only
+        stocks_data = []
+        for stock in selected_stocks:
+            symbol = stock.get('symbol')
+            if not symbol:
+                continue
+
+            data = get_stock_data_for_claude(symbol, stock, token)
+            if data:
+                stocks_data.append(data)
+
+        if not stocks_data:
+            return "❌ No stock data available to analyze."
+
+        # Build system prompt (this will be cached for cost savings)
+        system_prompt = """You are an expert swing trading analyst with deep knowledge of technical analysis, risk management, and market psychology.
+
+Your analysis should include:
+- Detailed technical breakdown (support/resistance, indicators, patterns)
+- Volume analysis and institutional interest
+- Entry timing and price levels
+- Risk assessment and position sizing
+- Market context and correlation
+
+Be thorough but actionable. Provide specific price levels and clear recommendations."""
+
+        # Build user prompt with stock data
+        user_prompt = f"""Please provide a DEEP ANALYSIS of these {len(stocks_data)} stocks from my watchlist:
+
+"""
+
+        for i, stock in enumerate(stocks_data, 1):
+            user_prompt += f"""
+{'═'*50}
+{i}. {stock['symbol']} - ${stock['current_price']}
+{'═'*50}
+
+SETUP:
+- Type: {stock['setup_type']}
+- Entry: ${stock['entry']:.2f}
+- Stop: ${stock['stop']:.2f}
+- Target: ${stock['target']:.2f}
+- Risk:Reward: {stock['rr_ratio']:.2f}:1
+
+CURRENT MARKET DATA:
+- Gap: {stock['gap_percent']:+.1f}%
+- Volume: {stock['volume_ratio']:.1f}x average volume
+- RSI (14): {stock['rsi']:.1f}
+- Last 5 closes: {stock['recent_closes']}
+
+TRADER NOTES:
+{stock['notes'] if stock['notes'] else 'None'}
+
+"""
+
+        user_prompt += """
+
+For EACH stock, provide:
+
+1. **SETUP ANALYSIS**
+   - Technical breakdown (entry quality, stop placement, target logic)
+   - Risk:Reward assessment
+
+2. **VOLUME CONVICTION**
+   - What volume is telling us (institutional interest, conviction level)
+
+3. **TECHNICAL INDICATORS**
+   - RSI interpretation
+   - Moving average context
+   - Price action analysis
+
+4. **ENTRY TIMING**
+   - Enter now, wait, or skip?
+   - Specific confirmation levels
+
+5. **POSITION SIZING**
+   - Full / Half / Small position
+   - Reasoning for size
+
+6. **RISKS TO MONITOR**
+   - What could invalidate this setup?
+   - Key levels to watch
+
+Be thorough and specific. Focus on actionable trading decisions."""
+
+        # Call Claude API with prompt caching
+        client = anthropic.Anthropic(api_key=api_key)
+
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4000,
+            system=[
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"}  # Cache system prompt
+                }
+            ],
+            messages=[
+                {"role": "user", "content": user_prompt}
+            ]
+        )
+
+        # Extract response
+        response_text = message.content[0].text
+
+        return response_text
+
+    except Exception as e:
+        logger.error(f"Claude API error: {e}")
+        return f"❌ Error analyzing stocks: {str(e)}"
 
