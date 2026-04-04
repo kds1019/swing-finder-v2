@@ -411,7 +411,14 @@ else:
         st.caption("Select specific stocks for in-depth analysis (Sonnet with caching)")
 
         # Create multiselect for stock selection
-        stock_options = [f"{s.get('symbol', 'N/A')} - ${s.get('entry', 0):.2f}" for s in watchlist]
+        stock_options = []
+        for s in watchlist:
+            symbol = s.get('symbol', 'N/A')
+            entry = s.get('entry')
+            if entry:
+                stock_options.append(f"{symbol} - ${entry:.2f}")
+            else:
+                stock_options.append(f"{symbol} - No entry set")
         selected_stocks_display = st.multiselect(
             "Select stocks to deep analyze:",
             options=stock_options,
