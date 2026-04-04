@@ -166,3 +166,77 @@ def save_watchlist(tickers: list) -> None:
     if gist_id:
         save_gist_json(gist_id, "watchlist.json", {"tickers": tickers})
 
+
+
+
+def add_stock_to_enhanced_watchlist(symbol: str, entry: float = None, stop: float = None,
+                                   target: float = None, setup_type: str = None, notes: str = None):
+    """
+    Add a stock to the enhanced watchlist with entry/stop/target data.
+    Auto-syncs to both local file and GitHub Gist.
+
+    Args:
+        symbol: Stock ticker
+        entry: Entry price
+        stop: Stop loss price
+        target: Target price
+        setup_type: Type of setup (e.g., "Breakout", "Pullback")
+        notes: Optional notes
+
+    Returns:
+        bool: True if added successfully, False if already exists
+    """
+    # Load current watchlist
+    gist_id = st.secrets.get("GIST_ID") or os.getenv("GIST_ID")
+    watchlist = []
+
+    if gist_id:
+        try:
+            watchlist = load_gist_json(gist_id, "watchlist_enhanced.json") or []
+        except:
+            pass
+
+    if not watchlist:
+        watchlist = load_json("data/watchlist_enhanced.json", default=[])
+
+    # Check if stock already exists
+    existing_symbols = [item.get('symbol') for item in watchlist if isinstance(item, dict)]
+    if symbol in existing_symbols:
+        return False  # Already exists
+
+    # Create new stock entry
+    new_stock = {
+        'symbol': symbol,
+        'setup_type': setup_type,
+        'entry': entry,
+        'stop': stop,
+        'target': target,
+        'notes': notes
+    }
+
+    # Add to watchlist
+    watchlist.append(new_stock)
+
+    # Save locally
+    save_json(watchlist, "data/watchlist_enhanced.json")
+
+    # Save to Gist
+    if gist_id:
+        github_token = st.secrets.get("GITHUB_GIST_TOKEN") or os.getenv("GITHUB_GIST_TOKEN")
+        if github_token:
+            try:
+                save_gist_json(gist_id, "watchlist_enhanced.json", watchlist)
+
+                # Also update Scanner format for compatibility
+                scanner_data = load_gist_json(gist_id, "watchlist.json") or {}
+                if isinstance(scanner_data, dict):
+                    active_name = st.session_state.get("active_watchlist", "Unnamed")
+                    if active_name not in scanner_data:
+                        scanner_data[active_name] = []
+                    if symbol not in scanner_data[active_name]:
+                        scanner_data[active_name].append(symbol)
+                    save_gist_json(gist_id, "watchlist.json", scanner_data)
+            except:
+                pass
+
+    return True

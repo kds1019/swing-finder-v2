@@ -25,7 +25,7 @@ from utils.indicators import (
     find_support_resistance, analyze_volume, calculate_relative_strength,
     calculate_fibonacci_levels, get_fibonacci_zone_label
 )
-from utils.storage import load_json, save_json
+from utils.storage import load_json, save_json, add_stock_to_enhanced_watchlist
 from utils.yahoo_fundamentals import get_yahoo_fundamentals, calculate_yahoo_fundamental_score
 from utils.target_calculator import calculate_scanner_target
 
@@ -1320,13 +1320,24 @@ def scanner_ui(TIINGO_TOKEN):
                             cA, cB = st.columns(2)
                             with cA:
                                 if st.button("➕ Watchlist", key=f"wl_confirmed_{rec['Symbol']}_{r}_{j}"):
-                                    if rec["Symbol"] not in st.session_state.watchlist:
-                                        st.session_state.watchlist.append(rec["Symbol"])
-                                        # Save to watchlists dict and sync to Gist
-                                        if st.session_state.get("active_watchlist"):
-                                            st.session_state.watchlists[st.session_state.active_watchlist] = st.session_state.watchlist
-                                            save_watchlists_to_gist(st.session_state.watchlists)
-                                        st.success(f"✅ Added {rec['Symbol']} to watchlist & synced!")
+                                    # Add to enhanced watchlist with entry/stop/target data
+                                    success = add_stock_to_enhanced_watchlist(
+                                        symbol=rec["Symbol"],
+                                        entry=rec.get('Price'),  # Current price as entry
+                                        stop=rec.get('Stop'),
+                                        target=rec.get('Target'),
+                                        setup_type=rec.get('Setup'),
+                                        notes=f"Added from Scanner - {rec.get('SetupContext', '')}"
+                                    )
+
+                                    if success:
+                                        # Also add to simple watchlist for Scanner compatibility
+                                        if rec["Symbol"] not in st.session_state.watchlist:
+                                            st.session_state.watchlist.append(rec["Symbol"])
+                                            if st.session_state.get("active_watchlist"):
+                                                st.session_state.watchlists[st.session_state.active_watchlist] = st.session_state.watchlist
+                                                save_watchlists_to_gist(st.session_state.watchlists)
+                                        st.success(f"✅ Added {rec['Symbol']} to watchlist with Entry: ${rec.get('Price'):.2f}, Stop: ${rec.get('Stop'):.2f}, Target: ${rec.get('Target'):.2f}")
                                     else:
                                         st.info(f"{rec['Symbol']} already on watchlist.")
                             with cB:
