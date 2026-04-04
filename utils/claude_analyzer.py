@@ -139,8 +139,8 @@ Be concise. Focus on actionable insights."""
         client = anthropic.Anthropic(api_key=api_key)
 
         message = client.messages.create(
-            model="claude-3-haiku-20240307",  # Haiku 3.0 for speed (3.5 Haiku not available yet)
-            max_tokens=1000,
+            model="claude-3-5-sonnet-20241022",  # Quick analysis with Sonnet (Haiku unavailable in API)
+            max_tokens=800,  # Keep it brief for speed
             messages=[
                 {"role": "user", "content": prompt}
             ]
