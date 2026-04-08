@@ -140,39 +140,7 @@ Notes: {notes or 'None'}
 Remember: I'm looking for COACHING to improve my skills, not just trade validation.
 """
 
-    # Display copy buttons for both ChatGPT and Claude
-    col1, col2, _ = st.columns([1, 1, 6])
-
-    with col1:
-        if st.button("📋 Copy for ChatGPT", key=f"copy_chatgpt_{symbol}"):
-            # Simpler version for ChatGPT
-            simple_prompt = (
-                f"You are a swing-trading coach. Provide educational coaching only; no financial advice.\n\n"
-                f"Symbol: {symbol}\n"
-                f"Setup type: {setup_type}\n"
-                f"Indicators: {indicators}\n"
-                f"Notes: {notes or '-'}\n\n"
-                "Use fresh, live market data from Yahoo Finance to evaluate entry conditions. "
-                "Coach me on timing, confirmation, and risk management."
-            )
-            st.session_state["copied_prompt"] = simple_prompt
-            st.toast("✅ ChatGPT prompt copied!")
-
-    with col2:
-        if st.button("📋 Copy for Claude", key=f"copy_claude_{symbol}"):
-            st.session_state["copied_prompt"] = prompt_text
-            st.toast("✅ Claude prompt copied! (Optimized format)")
-
-    # Display the prompt text for manual viewing/copying
-    st.caption("**Claude AI Optimized Prompt** (structured for better responses)")
-    st.code(prompt_text, language="markdown")
-
-    # Add quick links
-    col_link1, col_link2 = st.columns(2)
-    with col_link1:
-        st.markdown("[🔗 Open ChatGPT](https://chat.openai.com)")
-    with col_link2:
-        st.markdown("[🔗 Open Claude](https://claude.ai)")
+    # Removed: Copy for Chat feature (replaced with built-in Claude AI analysis)
 
 # ===================== MOBILE OPTIMIZATION: CONFIGURATION =====================
 def is_mobile():
