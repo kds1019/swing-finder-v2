@@ -2115,9 +2115,7 @@ Coach me on timing, confirmation, and risk management."""
                 "fundamental_score": fund_score,
                 "earnings_date": earnings_date
             }
-            gpt_prompt = build_trade_plan_for_gpt(trade_data)
-            st.text_area("📋 Copy this trade plan:", value=gpt_prompt, height=400)
-            st.caption("Select all (Ctrl+A) and copy (Ctrl+C) to paste into your GPT")
+            # Removed: GPT trade plan copy (replaced with built-in Claude AI analysis)
 
     # 💡 Setup guidance expander
     with st.expander("💡 How to Trade This Setup", expanded=True):
