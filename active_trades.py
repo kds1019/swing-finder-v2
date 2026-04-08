@@ -28,6 +28,7 @@ from gpt_export import (
     build_trade_review_for_gpt,
     build_coaching_request_for_gpt
 )
+from utils.active_trade_analyzer import analyze_active_trades
 
 
 
@@ -1920,6 +1921,78 @@ def show_active_trader_coaching() -> None:
         del st.session_state["force_refresh"]
         rows = _load_trades()
         rows = [_compute_fields(r) for r in rows]
+
+    # ============================================================================
+    # CLAUDE AI TRADE ANALYSIS
+    # ============================================================================
+    st.markdown("---")
+    st.markdown("## 🤖 AI Trade Analysis (Claude)")
+    st.caption("Get Claude's analysis of your active trades with actionable recommendations")
+
+    # Get open trades
+    open_trades = [r for r in rows if r.get("status") == "OPEN"]
+
+    # Check if Claude API is configured
+    anthropic_key = (
+        st.secrets.get("swingfinder_key") or
+        st.secrets.get("ANTHROPIC_API_KEY") or
+        os.getenv("ANTHROPIC_API_KEY") or
+        os.getenv("swingfinder_key")
+    )
+    tiingo_token = _get_tiingo_token()
+
+    if not anthropic_key:
+        st.warning("⚠️ Claude API not configured. Add your Claude API key to use AI trade analysis.")
+    elif not open_trades:
+        st.info("📭 No open trades to analyze. Open some trades first!")
+    else:
+        # Multiselect for trade selection
+        trade_options = []
+        for t in open_trades:
+            symbol = t.get('symbol', 'N/A')
+            entry = t.get('entry', 0)
+            current = t.get('last_price', 0) or 0
+            pnl_pct = ((current - entry) / entry * 100) if entry > 0 else 0
+            trade_options.append(f"{symbol} - Entry: ${entry:.2f}, Current: ${current:.2f} ({pnl_pct:+.1f}%)")
+
+        selected_trades_display = st.multiselect(
+            "Select trades to analyze:",
+            options=trade_options,
+            default=[]
+        )
+
+        if selected_trades_display:
+            # Map selected display names back to trade dictionaries
+            selected_symbols = [s.split(" - ")[0] for s in selected_trades_display]
+            selected_trades = [t for t in open_trades if t.get('symbol') in selected_symbols]
+
+            if st.button(f"🤖 Analyze {len(selected_trades)} Selected Trade{'s' if len(selected_trades) > 1 else ''}",
+                        type="primary", use_container_width=True):
+                if not tiingo_token:
+                    st.error("❌ Tiingo API token not configured")
+                else:
+                    with st.spinner(f"🤖 Analyzing {len(selected_trades)} trade(s)... (with prompt caching)"):
+                        analysis = analyze_active_trades(
+                            selected_trades=selected_trades,
+                            token=tiingo_token,
+                            api_key=anthropic_key
+                        )
+
+                        st.markdown(f"### 🎯 Trade Analysis: {', '.join(selected_symbols)}")
+                        st.markdown(analysis)
+
+                        st.session_state['trade_analysis'] = analysis
+                        st.session_state['trade_analysis_time'] = dt.datetime.now().strftime("%Y-%m-%d %I:%M %p")
+                        st.session_state['trade_analysis_symbols'] = selected_symbols
+
+        # Show previous analysis
+        if 'trade_analysis' in st.session_state:
+            trades_analyzed = st.session_state.get('trade_analysis_symbols', [])
+            st.caption(f"💾 Last analysis: {', '.join(trades_analyzed)} at {st.session_state.get('trade_analysis_time', 'Unknown')}")
+            with st.expander("📊 View Last Trade Analysis", expanded=False):
+                st.markdown(st.session_state['trade_analysis'])
+
+    st.markdown("---")
 
     # --- Main content ---
     _render_open_positions(rows)
