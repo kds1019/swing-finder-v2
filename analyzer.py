@@ -20,7 +20,6 @@ from utils.relative_strength import (
     calculate_relative_strength_rank
 )
 from utils.multi_timeframe import get_multi_timeframe_analysis, format_mtf_display
-from gpt_export import build_trade_plan_for_gpt
 from utils.target_calculator import calculate_fibonacci_target, format_target_display
 
 # ===================== MOBILE OPTIMIZATION: DATA CACHING =====================
