@@ -22,12 +22,6 @@ import streamlit as st
 from utils.tiingo_api import fetch_tiingo_intraday
 from utils.tiingo_api import fetch_tiingo_realtime_quote
 from utils.storage import load_gist_json, save_gist_json
-from gpt_export import (
-    build_trade_plan_for_gpt,
-    build_live_update_for_gpt,
-    build_trade_review_for_gpt,
-    build_coaching_request_for_gpt
-)
 from utils.active_trade_analyzer import analyze_active_trades
 
 
@@ -1561,11 +1555,7 @@ def _render_open_positions(rows: List[Dict[str, Any]]) -> None:
                 enhanced_trade_data["intraday_trend"] = "Bullish ✅" if sig.ema_fast_above_slow else "Bearish ⚠️"
                 enhanced_trade_data["intraday_volume"] = f"{sig.vol_ratio:.2f}x avg" if sig.vol_ratio is not None else "N/A"
 
-            # Live Update (most common for active trades)
-            st.markdown("**📊 Live Trade Update**")
-            live_prompt = build_live_update_for_gpt(enhanced_trade_data)
-            st.text_area("Copy Live Update:", value=live_prompt, height=300, key=f"live_area_{sy}")
-            st.caption("Select all (Ctrl+A) and copy (Ctrl+C)")
+            # Removed: Live Update GPT export (replaced with built-in Claude AI analysis)
 
             st.markdown("---")
 
@@ -1600,10 +1590,7 @@ def _render_open_positions(rows: List[Dict[str, Any]]) -> None:
             # Trade Plan (for reference)
             st.markdown("---")
             st.markdown("**📋 Original Trade Plan**")
-            with st.expander("View Trade Plan", expanded=False):
-                plan_prompt = build_trade_plan_for_gpt(enhanced_trade_data)
-                st.text_area("Copy Trade Plan:", value=plan_prompt, height=400, key=f"plan_area_{sy}")
-                st.caption("Select all (Ctrl+A) and copy (Ctrl+C)")
+            # Removed: Trade Plan GPT export (replaced with built-in Claude AI analysis)
 
         st.markdown("---")
 
@@ -1623,12 +1610,7 @@ def _render_closed_positions(rows: List[Dict[str, Any]]) -> None:
                     f"stop {r.get('stop')} • target {r.get('target', 0)} • shares {r.get('shares', 0)}"
                 )
 
-            with col2:
-                # GPT Trade Review export (Enhanced)
-                with st.popover("💬 GPT Review", use_container_width=True):
-                    review_prompt = build_trade_review_for_gpt(r)
-                    st.text_area("Copy Trade Review:", value=review_prompt, height=500, key=f"review_area_{idx}")
-                    st.caption("Select all (Ctrl+A) and copy (Ctrl+C) to paste into your GPT")
+            # Removed: GPT Trade Review export (replaced with built-in Claude AI analysis)
 
             st.markdown("---")
 
