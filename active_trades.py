@@ -1559,33 +1559,7 @@ def _render_open_positions(rows: List[Dict[str, Any]]) -> None:
 
             st.markdown("---")
 
-            # Coaching Request (with intraday signals)
-            st.markdown("**🧠 Coaching Request**")
-
-            # Tabs for ChatGPT vs Claude
-            coach_tab1, coach_tab2 = st.tabs(["ChatGPT", "Claude (Optimized)"])
-
-            with coach_tab1:
-                sig_dict = None
-                if sig:
-                    sig_dict = {
-                        "rsi": sig.rsi,
-                        "ema_fast_above_slow": sig.ema_fast_above_slow,
-                        "vol_ratio": sig.vol_ratio
-                    }
-                coaching_prompt = build_coaching_request_for_gpt(enhanced_trade_data, sig_dict)
-                st.text_area("Copy ChatGPT Prompt:", value=coaching_prompt, height=250, key=f"coach_chatgpt_{sy}")
-                st.caption("Select all (Ctrl+A) and copy (Ctrl+C)")
-                st.markdown("[🔗 Open ChatGPT](https://chat.openai.com)")
-
-            with coach_tab2:
-                # Get intraday text from cache
-                intraday_text = intraday_cache.get(sy.upper(), "")
-                claude_prompt = _build_ai_prompt_claude(r, sig, intraday_text)
-                st.text_area("Copy Claude Prompt:", value=claude_prompt, height=300, key=f"coach_claude_{sy}")
-                st.caption("Select all (Ctrl+A) and copy (Ctrl+C)")
-                st.markdown("[🔗 Open Claude](https://claude.ai)")
-                st.info("💡 Claude provides more structured, actionable coaching for active trades")
+            # Removed: Coaching Request copy/paste (replaced with built-in Claude AI Trade Analysis)
 
             # Trade Plan (for reference)
             st.markdown("---")
