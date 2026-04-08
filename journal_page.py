@@ -12,7 +12,7 @@ from active_trades import (
     calculate_performance_stats,
     calculate_mistake_stats
 )
-from gpt_export import build_trade_review_for_gpt
+# Removed: gpt_export import (replaced with built-in Claude AI)
 
 
 def build_journal_coaching_prompt(trades: List[Dict[str, Any]], focus: str = "general") -> str:
