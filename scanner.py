@@ -740,7 +740,35 @@ def scanner_ui(TIINGO_TOKEN):
             if last_volume < min_volume:
                 return f"failed volume filter (Vol {last_volume:,.0f} < {min_volume:,.0f})"
 
-            return "did not qualify based on technical setup"
+            # Check technical setup criteria
+            delta = df['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            rsi_series = 100 - (100 / (1 + rs))
+            rsi = rsi_series.iloc[-1]
+
+            ema20 = df['Close'].ewm(span=20, adjust=False).mean().iloc[-1]
+            ema50 = df['Close'].ewm(span=50, adjust=False).mean().iloc[-1]
+
+            # Determine why it failed setup
+            if rsi < 35:
+                return f"RSI too low ({rsi:.1f} < 35, oversold)"
+            if rsi > 70:
+                return f"RSI too high ({rsi:.1f} > 70, overbought)"
+
+            if ema20 < ema50:
+                # Downtrend
+                if rsi >= 50:
+                    return f"Downtrend (EMA20 ${ema20:.2f} < EMA50 ${ema50:.2f}) + RSI too high ({rsi:.1f}) for pullback (needs 35-50)"
+                else:
+                    return f"Downtrend pullback possible but failed other criteria (RSI {rsi:.1f}, check band position)"
+            else:
+                # Uptrend
+                if rsi < 55:
+                    return f"Uptrend (EMA20 ${ema20:.2f} > EMA50 ${ema50:.2f}) but RSI too low ({rsi:.1f}) for breakout (needs 55+)"
+                else:
+                    return f"Uptrend breakout possible but failed other criteria (RSI {rsi:.1f}, check band position)"
         except Exception as e:
             return f"error checking failure reason: {e}"
 
