@@ -1185,6 +1185,12 @@ def scanner_ui(TIINGO_TOKEN):
                    f"High (70+): {high_scores} | Mid (50-69): {mid_scores} | Low (<50): {low_scores}")
             st.caption("💡 Results are now sorted by SmartScore (comprehensive ranking). Higher scores = better setups with favorable trend, sector alignment, and Fibonacci positioning.")
 
+        # ✅ DEBUG: Show filter status ALWAYS
+        if debug:
+            st.warning(f"🔍 DEBUG: Fibonacci filter status = {st.session_state.get('fib_filter', False)}")
+            st.warning(f"🔍 DEBUG: Earnings filter status = {st.session_state.get('earnings_filter', False)}")
+            st.warning(f"🔍 DEBUG: Before filters: {len(confirmed)} confirmed, {len(near_misses)} near misses")
+
         # ✅ Apply Fibonacci filter if enabled
         if st.session_state.get("fib_filter", False):
             original_confirmed_count = len(confirmed)
