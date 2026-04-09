@@ -1185,11 +1185,8 @@ def scanner_ui(TIINGO_TOKEN):
                    f"High (70+): {high_scores} | Mid (50-69): {mid_scores} | Low (<50): {low_scores}")
             st.caption("💡 Results are now sorted by SmartScore (comprehensive ranking). Higher scores = better setups with favorable trend, sector alignment, and Fibonacci positioning.")
 
-        # ✅ DEBUG: Show filter status ALWAYS
-        if debug:
-            st.warning(f"🔍 DEBUG: Fibonacci filter status = {st.session_state.get('fib_filter', False)}")
-            st.warning(f"🔍 DEBUG: Earnings filter status = {st.session_state.get('earnings_filter', False)}")
-            st.warning(f"🔍 DEBUG: Before filters: {len(confirmed)} confirmed, {len(near_misses)} near misses")
+        # ✅ DEBUG: Show filter status ALWAYS (helps catch bugs)
+        st.info(f"🔍 **Filter Status:** Fib={st.session_state.get('fib_filter', False)} | Earnings={st.session_state.get('earnings_filter', False)} | Before filters: {len(confirmed)} confirmed, {len(near_misses)} near misses")
 
         # ✅ Apply Fibonacci filter if enabled
         if st.session_state.get("fib_filter", False):
@@ -1198,8 +1195,8 @@ def scanner_ui(TIINGO_TOKEN):
 
             # Debug: Show which stocks are being filtered
             filtered_stocks = [r['Symbol'] for r in confirmed if r.get('FibZone') != 'discount']
-            if filtered_stocks and debug:
-                st.warning(f"🔍 DEBUG: Fibonacci filter removing these stocks (premium zone): {', '.join(filtered_stocks)}")
+            if filtered_stocks:
+                st.warning(f"🔍 **Fibonacci Filter Removing:** {', '.join(filtered_stocks)} (premium zone)")
 
             confirmed = [r for r in confirmed if r.get('FibZone') == 'discount']
             near_misses = [r for r in near_misses if r.get('FibZone') == 'discount']
@@ -1215,8 +1212,8 @@ def scanner_ui(TIINGO_TOKEN):
 
             # Debug: Show which stocks are being filtered
             filtered_stocks = [f"{r['Symbol']} ({r.get('DaysToEarnings')}d)" for r in confirmed if r.get('DaysToEarnings') is not None and r.get('DaysToEarnings') <= 7]
-            if filtered_stocks and debug:
-                st.warning(f"🔍 DEBUG: Earnings filter removing these stocks: {', '.join(filtered_stocks)}")
+            if filtered_stocks:
+                st.warning(f"🔍 **Earnings Filter Removing:** {', '.join(filtered_stocks)}")
 
             # Filter out stocks with earnings in next 7 days
             confirmed = [r for r in confirmed if not (r.get('DaysToEarnings') is not None and r.get('DaysToEarnings') <= 7)]
