@@ -952,7 +952,7 @@ def scanner_ui(TIINGO_TOKEN):
                         if 40 <= rsi <= 70 and 0.20 <= band <= 0.60:
                             checks.append(("🟡", f"NEAR MISS: RSI {rsi:.1f} in range [40-70], Band {band:.2f} in range [0.20-0.60]"))
                     else:
-                        checks.append(("❌", "No setup possible - DOWNTREND (EMA20 < EMA50)"))
+                        checks.append(("⚠️", f"DOWNTREND (EMA20 {ema20:.2f} < EMA50 {ema50:.2f}) - Breakouts disabled, but Pullbacks still possible if criteria met"))
 
                     # Display all checks
                     for icon, msg in checks:
