@@ -5,7 +5,7 @@ Analyzes active trades with real-time data and provides actionable recommendatio
 
 import anthropic
 from typing import List, Dict
-from utils.tiingo_api import fetch_tiingo_realtime_quote, tiingo_history
+from utils.tiingo_api import fetch_tiingo_realtime_quote, tiingo_history, fetch_tiingo_intraday
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -33,8 +33,23 @@ def get_active_trade_data(trade: Dict, token: str) -> Dict:
         # Get real-time quote
         quote = fetch_tiingo_realtime_quote(symbol, token)
         current_price = quote.get('last') or quote.get('tngoLast', 0)
-        
-        # Get historical data (last 20 days)
+
+        # Get intraday data (today's price action)
+        intraday_df = fetch_tiingo_intraday(symbol, token)
+
+        # Calculate today's metrics from intraday
+        if intraday_df is not None and not intraday_df.empty:
+            today_open = intraday_df['open'].iloc[0]
+            today_high = intraday_df['high'].max()
+            today_low = intraday_df['low'].min()
+            intraday_change_pct = ((current_price - today_open) / today_open * 100) if today_open > 0 else 0
+        else:
+            today_open = current_price
+            today_high = current_price
+            today_low = current_price
+            intraday_change_pct = 0
+
+        # Get historical data (last 20 days for context)
         df = tiingo_history(symbol, token, days=20)
         
         if df is None or df.empty:
@@ -64,7 +79,21 @@ def get_active_trade_data(trade: Dict, token: str) -> Dict:
         
         # Recent price action
         recent_closes = df['Close'].tail(5).tolist()
-        
+
+        # Calculate EMAs for trend context
+        ema20 = df['Close'].ewm(span=20, adjust=False).mean().iloc[-1]
+        ema50 = df['Close'].ewm(span=50, adjust=False).mean().iloc[-1] if len(df) >= 50 else None
+
+        # Recent highs/lows (for support/resistance)
+        recent_high = df['High'].tail(20).max()
+        recent_low = df['Low'].tail(20).min()
+
+        # Trend direction
+        if ema50:
+            trend = "Uptrend" if ema20 > ema50 else "Downtrend"
+        else:
+            trend = "Uptrend" if df['Close'].iloc[-1] > df['Close'].iloc[0] else "Downtrend"
+
         # Days in trade
         from datetime import datetime
         try:
@@ -72,7 +101,7 @@ def get_active_trade_data(trade: Dict, token: str) -> Dict:
             days_in_trade = (datetime.now() - entry_dt).days
         except:
             days_in_trade = 0
-        
+
         return {
             "symbol": symbol,
             "entry_price": round(entry, 2),
@@ -89,7 +118,16 @@ def get_active_trade_data(trade: Dict, token: str) -> Dict:
             "volume_ratio": round(volume_ratio, 2),
             "recent_closes": [round(c, 2) for c in recent_closes],
             "days_in_trade": days_in_trade,
-            "entry_date": entry_date
+            "entry_date": entry_date,
+            "ema20": round(ema20, 2),
+            "ema50": round(ema50, 2) if ema50 else None,
+            "recent_high_20d": round(recent_high, 2),
+            "recent_low_20d": round(recent_low, 2),
+            "trend": trend,
+            "today_open": round(today_open, 2),
+            "today_high": round(today_high, 2),
+            "today_low": round(today_low, 2),
+            "intraday_change_pct": round(intraday_change_pct, 2)
         }
     
     except Exception as e:
@@ -149,17 +187,28 @@ ENTRY:
 - Target: ${trade['target']}
 - Position: {trade['shares']} shares
 
-CURRENT STATUS:
-- Current Price: ${trade['current_price']}
+TODAY'S INTRADAY ACTION (REAL-TIME):
+- Open: ${trade['today_open']:.2f}
+- Current: ${trade['current_price']:.2f} (LIVE from Tiingo)
+- Today's High: ${trade['today_high']:.2f}
+- Today's Low: ${trade['today_low']:.2f}
+- Intraday Change: {trade['intraday_change_pct']:+.1f}%
+
+POSITION STATUS:
 - P&L: ${trade['pnl_per_share']} per share ({trade['pnl_percent']:+.1f}%)
 - Total P&L: ${trade['pnl_total']:+,.2f}
 - Distance to Stop: {trade['distance_to_stop_pct']:.1f}% away
 - Distance to Target: {trade['distance_to_target_pct']:.1f}% away
 
-TECHNICAL:
-- RSI: {trade['rsi']:.1f}
+TECHNICAL ANALYSIS (EOD + INTRADAY):
+- RSI (14): {trade['rsi']:.1f}
 - Volume: {trade['volume_ratio']:.1f}x average
-- Last 5 closes: {trade['recent_closes']}
+- EMA20: ${trade['ema20']:.2f}
+- EMA50: ${trade['ema50']:.2f if trade['ema50'] else 'N/A'}
+- Trend: {trade['trend']}
+- 20-Day High: ${trade['recent_high_20d']:.2f} (resistance)
+- 20-Day Low: ${trade['recent_low_20d']:.2f} (support)
+- Last 5 daily closes: {trade['recent_closes']}
 
 """
         
