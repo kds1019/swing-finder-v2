@@ -1162,6 +1162,11 @@ def scanner_ui(TIINGO_TOKEN):
             original_confirmed_count = len(confirmed)
             original_near_count = len(near_misses)
 
+            # Debug: Show which stocks are being filtered
+            filtered_stocks = [r['Symbol'] for r in confirmed if r.get('FibZone') != 'discount']
+            if filtered_stocks and debug:
+                st.warning(f"🔍 DEBUG: Fibonacci filter removing these stocks (premium zone): {', '.join(filtered_stocks)}")
+
             confirmed = [r for r in confirmed if r.get('FibZone') == 'discount']
             near_misses = [r for r in near_misses if r.get('FibZone') == 'discount']
 
@@ -1173,6 +1178,11 @@ def scanner_ui(TIINGO_TOKEN):
         if st.session_state.get("earnings_filter", False):
             original_confirmed_count = len(confirmed)
             original_near_count = len(near_misses)
+
+            # Debug: Show which stocks are being filtered
+            filtered_stocks = [f"{r['Symbol']} ({r.get('DaysToEarnings')}d)" for r in confirmed if r.get('DaysToEarnings') is not None and r.get('DaysToEarnings') <= 7]
+            if filtered_stocks and debug:
+                st.warning(f"🔍 DEBUG: Earnings filter removing these stocks: {', '.join(filtered_stocks)}")
 
             # Filter out stocks with earnings in next 7 days
             confirmed = [r for r in confirmed if not (r.get('DaysToEarnings') is not None and r.get('DaysToEarnings') <= 7)]
