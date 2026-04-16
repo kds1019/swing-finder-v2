@@ -52,29 +52,47 @@ def get_active_trade_data(trade: Dict, token: str) -> Dict:
         logger.info(f"{symbol}: Fetching real-time quote from Tiingo...")
         quote = fetch_tiingo_realtime_quote(symbol, token)
         if not quote:
-            logger.error(f"{symbol}: fetch_tiingo_realtime_quote returned None or empty")
-            return None
-        current_price = quote.get('last') or quote.get('tngoLast', 0)
-        if current_price == 0:
-            logger.error(f"{symbol}: Current price is 0 from quote: {quote}")
-            return None
-        logger.info(f"{symbol}: Got current price ${current_price}")
+            logger.error(f"{symbol}: fetch_tiingo_realtime_quote returned None or empty - Trying historical data instead...")
+            # Fallback to historical data if real-time fails
+            df_fallback = tiingo_history(symbol, token, days=5)
+            if df_fallback is None or df_fallback.empty:
+                logger.error(f"{symbol}: Both real-time and historical data failed")
+                return None
+            current_price = float(df_fallback.iloc[-1]['Close'])
+            logger.info(f"{symbol}: Got current price ${current_price} from historical data (fallback)")
+        else:
+            current_price = quote.get('last') or quote.get('tngoLast', 0)
+            if current_price == 0:
+                logger.error(f"{symbol}: Current price is 0 from quote: {quote}")
+                return None
+            logger.info(f"{symbol}: Got current price ${current_price}")
 
-        # Get intraday data (today's price action)
+        # Get intraday data (today's price action) - OPTIONAL
         logger.info(f"{symbol}: Fetching intraday data from Tiingo...")
         intraday_df = fetch_tiingo_intraday(symbol, token)
 
-        # Calculate today's metrics from intraday
+        # Calculate today's metrics from intraday (if available)
         if intraday_df is not None and not intraday_df.empty:
-            today_open = intraday_df['open'].iloc[0]
-            today_high = intraday_df['high'].max()
-            today_low = intraday_df['low'].min()
-            intraday_change_pct = ((current_price - today_open) / today_open * 100) if today_open > 0 else 0
+            try:
+                today_open = intraday_df['open'].iloc[0]
+                today_high = intraday_df['high'].max()
+                today_low = intraday_df['low'].min()
+                intraday_change_pct = ((current_price - today_open) / today_open * 100) if today_open > 0 else 0
+                logger.info(f"{symbol}: Got intraday data - Open: ${today_open}, High: ${today_high}, Low: ${today_low}")
+            except:
+                # Intraday might have wrong columns, use fallback
+                today_open = current_price
+                today_high = current_price
+                today_low = current_price
+                intraday_change_pct = 0
+                logger.warning(f"{symbol}: Intraday data malformed, using fallback")
         else:
+            # No intraday data - use current price as fallback
             today_open = current_price
             today_high = current_price
             today_low = current_price
             intraday_change_pct = 0
+            logger.warning(f"{symbol}: No intraday data available (might require premium Tiingo plan), using current price as fallback")
 
         # Get historical data (last 20 days for context)
         logger.info(f"{symbol}: Fetching historical data (20 days) from Tiingo...")
