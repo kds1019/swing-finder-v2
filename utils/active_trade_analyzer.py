@@ -14,11 +14,11 @@ logger = get_logger(__name__)
 def get_active_trade_data(trade: Dict, token: str) -> Dict:
     """
     Fetch comprehensive data for an active trade.
-    
+
     Args:
         trade: Active trade dictionary with entry/stop/target/shares
         token: Tiingo API token
-    
+
     Returns:
         Dictionary with all trade analysis data
     """
@@ -30,6 +30,23 @@ def get_active_trade_data(trade: Dict, token: str) -> Dict:
         shares = trade.get('shares', 0)
         # Active trades uses 'opened' field, not 'entry_date'
         entry_date = trade.get('opened') or trade.get('entry_date', 'Unknown')
+
+        # DEBUG: Log what we have
+        logger.info(f"Fetching data for {symbol}: entry={entry}, stop={stop}, target={target}, shares={shares}, date={entry_date}")
+
+        # Validate required fields
+        if not symbol:
+            logger.error("No symbol provided")
+            return None
+        if entry == 0:
+            logger.error(f"{symbol}: No entry price (entry=0)")
+            return None
+        if stop == 0:
+            logger.error(f"{symbol}: No stop loss (stop=0)")
+            return None
+        if target == 0:
+            logger.error(f"{symbol}: No target (target=0)")
+            return None
         
         # Get real-time quote
         quote = fetch_tiingo_realtime_quote(symbol, token)
@@ -163,7 +180,25 @@ def analyze_active_trades(selected_trades: List[Dict], token: str, api_key: str)
                 errors.append(f"{symbol} (failed to fetch data)")
 
         if not trades_data:
-            error_msg = f"❌ No trade data available to analyze.\n\n**Failed to fetch data for:** {', '.join(errors)}\n\n**Possible causes:**\n- Invalid ticker symbol\n- Tiingo API rate limit\n- Missing trade data (entry/stop/target)\n\nCheck your trade has: symbol, entry, stop, target, shares, entry_date"
+            error_details = '\n'.join([f"- {err}" for err in errors])
+            error_msg = f"""❌ No trade data available to analyze.
+
+**Failed to fetch data for:**
+{error_details}
+
+**Possible causes:**
+- **Missing required fields**: Each trade needs entry price, stop loss, and target
+- **Entry/Stop/Target is zero**: Check your trade has actual values, not 0
+- **Invalid ticker symbol**: Verify symbol is correct
+- **Tiingo API issue**: Rate limit or connection problem
+
+**How to fix:**
+1. Go to your trade in Active Trades
+2. Make sure it has: Entry Price, Stop Loss, Target
+3. Make sure none of them are $0.00
+4. Try analyzing again
+
+**Debug logs have been written** - check Streamlit Cloud logs for details."""
             return error_msg
         
         # Build system prompt with caching
