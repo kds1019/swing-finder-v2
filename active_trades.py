@@ -1894,6 +1894,10 @@ def show_active_trader_coaching() -> None:
         statuses = [r.get("status", "NO_STATUS") for r in rows]
         st.caption(f"🔍 DEBUG: Trade statuses: {statuses}")
 
+    # Get tokens
+    tiingo_token = _get_tiingo_token()
+    st.caption(f"🔍 DEBUG: Tiingo token present: {bool(tiingo_token)} (length: {len(tiingo_token) if tiingo_token else 0})")
+
     # Check if Claude API is configured
     anthropic_key = (
         st.secrets.get("swingfinder_key") or
@@ -1901,8 +1905,6 @@ def show_active_trader_coaching() -> None:
         os.getenv("ANTHROPIC_API_KEY") or
         os.getenv("swingfinder_key")
     )
-    tiingo_token = _get_tiingo_token()
-
     if not anthropic_key:
         st.warning("⚠️ Claude API not configured. Add your Claude API key to use AI trade analysis.")
     elif not open_trades:
