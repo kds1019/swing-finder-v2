@@ -1888,6 +1888,12 @@ def show_active_trader_coaching() -> None:
     # Get open trades
     open_trades = [r for r in rows if r.get("status") == "OPEN"]
 
+    # DEBUG: Show what we found
+    st.caption(f"🔍 DEBUG: Total trades loaded: {len(rows)}, Open trades: {len(open_trades)}")
+    if rows and len(rows) > 0:
+        statuses = [r.get("status", "NO_STATUS") for r in rows]
+        st.caption(f"🔍 DEBUG: Trade statuses: {statuses}")
+
     # Check if Claude API is configured
     anthropic_key = (
         st.secrets.get("swingfinder_key") or
