@@ -131,7 +131,9 @@ def get_active_trade_data(trade: Dict, token: str) -> Dict:
         }
     
     except Exception as e:
-        logger.error(f"Error fetching trade data for {trade.get('symbol')}: {e}")
+        symbol = trade.get('symbol', 'UNKNOWN')
+        logger.error(f"Error fetching trade data for {symbol}: {e}")
+        logger.error(f"Trade data structure: entry={trade.get('entry')}, stop={trade.get('stop')}, target={trade.get('target')}, shares={trade.get('shares')}")
         return None
 
 
@@ -150,13 +152,18 @@ def analyze_active_trades(selected_trades: List[Dict], token: str, api_key: str)
     try:
         # Fetch real-time data for each trade
         trades_data = []
+        errors = []
         for trade in selected_trades:
+            symbol = trade.get('symbol', 'UNKNOWN')
             data = get_active_trade_data(trade, token)
             if data:
                 trades_data.append(data)
-        
+            else:
+                errors.append(f"{symbol} (failed to fetch data)")
+
         if not trades_data:
-            return "❌ No trade data available to analyze."
+            error_msg = f"❌ No trade data available to analyze.\n\n**Failed to fetch data for:** {', '.join(errors)}\n\n**Possible causes:**\n- Invalid ticker symbol\n- Tiingo API rate limit\n- Missing trade data (entry/stop/target)\n\nCheck your trade has: symbol, entry, stop, target, shares, entry_date"
+            return error_msg
         
         # Build system prompt with caching
         system_prompt = """You are an expert swing trading analyst specializing in active trade management. 
