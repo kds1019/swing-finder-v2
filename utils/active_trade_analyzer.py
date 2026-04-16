@@ -184,34 +184,53 @@ def analyze_active_trades(selected_trades: List[Dict], token: str, api_key: str)
         # Fetch real-time data for each trade
         trades_data = []
         errors = []
+        detailed_errors = []
+
         for trade in selected_trades:
             symbol = trade.get('symbol', 'UNKNOWN')
-            data = get_active_trade_data(trade, token)
-            if data:
-                trades_data.append(data)
-            else:
-                errors.append(f"{symbol} (failed to fetch data)")
+
+            # Try to fetch data and capture specific error
+            try:
+                data = get_active_trade_data(trade, token)
+                if data:
+                    trades_data.append(data)
+                else:
+                    # Data fetch returned None - check why
+                    entry = trade.get('entry', 0)
+                    stop = trade.get('stop', 0)
+                    target = trade.get('target', 0)
+
+                    if entry == 0:
+                        detailed_errors.append(f"{symbol}: Entry price is 0 or missing")
+                    elif stop == 0:
+                        detailed_errors.append(f"{symbol}: Stop loss is 0 or missing")
+                    elif target == 0:
+                        detailed_errors.append(f"{symbol}: Target is 0 or missing")
+                    else:
+                        detailed_errors.append(f"{symbol}: Tiingo API failed to fetch data (check if symbol is valid or API is down)")
+
+                    errors.append(f"{symbol}")
+            except Exception as e:
+                detailed_errors.append(f"{symbol}: Exception - {str(e)}")
+                errors.append(f"{symbol}")
 
         if not trades_data:
-            error_details = '\n'.join([f"- {err}" for err in errors])
+            error_details = '\n'.join([f"- {err}" for err in detailed_errors])
             error_msg = f"""❌ No trade data available to analyze.
 
-**Failed to fetch data for:**
+**Detailed Error Report:**
 {error_details}
 
-**Possible causes:**
-- **Missing required fields**: Each trade needs entry price, stop loss, and target
-- **Entry/Stop/Target is zero**: Check your trade has actual values, not 0
-- **Invalid ticker symbol**: Verify symbol is correct
-- **Tiingo API issue**: Rate limit or connection problem
+**Common Solutions:**
+- **If "Tiingo API failed"**: Your Tiingo token might be invalid, expired, or rate limited. Check your .env file.
+- **If "Entry/Stop/Target is 0"**: Edit your trade and add the missing values.
+- **If "Symbol invalid"**: Make sure ticker symbol is spelled correctly (BAC, ALLY, etc.)
 
-**How to fix:**
-1. Go to your trade in Active Trades
-2. Make sure it has: Entry Price, Stop Loss, Target
-3. Make sure none of them are $0.00
-4. Try analyzing again
-
-**Debug logs have been written** - check Streamlit Cloud logs for details."""
+**Your Trade Data (from debug):**
+Symbol: {', '.join([t.get('symbol', 'N/A') for t in selected_trades])}
+Entry: {', '.join([str(t.get('entry', 'N/A')) for t in selected_trades])}
+Stop: {', '.join([str(t.get('stop', 'N/A')) for t in selected_trades])}
+Target: {', '.join([str(t.get('target', 'N/A')) for t in selected_trades])}"""
             return error_msg
         
         # Build system prompt with caching
