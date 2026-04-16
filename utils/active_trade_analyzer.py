@@ -297,8 +297,8 @@ TECHNICAL ANALYSIS (EOD + INTRADAY):
 - RSI (14): {trade['rsi']:.1f}
 - Volume: {trade['volume_ratio']:.1f}x average
 - EMA20: ${trade['ema20']:.2f}
-- EMA50: ${trade['ema50']:.2f if trade['ema50'] else 'N/A'}
-- Trend: {trade['trend']}
+- EMA50: ${trade['ema50']:.2f} if trade.get('ema50') else 'N/A (insufficient data)'
+- Trend: {trade.get('trend', 'Unknown')}
 - 20-Day High: ${trade['recent_high_20d']:.2f} (resistance)
 - 20-Day Low: ${trade['recent_low_20d']:.2f} (support)
 - Last 5 daily closes: {trade['recent_closes']}
@@ -354,5 +354,8 @@ Be specific with price levels. I need clear trading decisions."""
         return response_text
     
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
         logger.error(f"Claude API error: {e}")
-        return f"❌ Error analyzing trades: {str(e)}"
+        logger.error(f"Full traceback: {error_trace}")
+        return f"❌ Error analyzing trades: {str(e)}\n\n**Error occurred while building Claude prompt or processing response.**\n\nPlease check that all trade data is valid (no None/null values)."
