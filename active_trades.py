@@ -1928,6 +1928,19 @@ def show_active_trader_coaching() -> None:
             selected_symbols = [s.split(" - ")[0] for s in selected_trades_display]
             selected_trades = [t for t in open_trades if t.get('symbol') in selected_symbols]
 
+            # DEBUG: Show what data we're sending
+            with st.expander("🔍 Debug: View Trade Data Being Sent to Analyzer", expanded=False):
+                for trade in selected_trades:
+                    st.json({
+                        'symbol': trade.get('symbol'),
+                        'entry': trade.get('entry'),
+                        'stop': trade.get('stop'),
+                        'target': trade.get('target'),
+                        'shares': trade.get('shares'),
+                        'opened': trade.get('opened'),
+                        'entry_date': trade.get('entry_date'),
+                    })
+
             if st.button(f"🤖 Analyze {len(selected_trades)} Selected Trade{'s' if len(selected_trades) > 1 else ''}",
                         type="primary", use_container_width=True):
                 if not tiingo_token:
