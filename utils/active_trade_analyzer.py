@@ -28,7 +28,8 @@ def get_active_trade_data(trade: Dict, token: str) -> Dict:
         stop = trade.get('stop', 0)
         target = trade.get('target', 0)
         shares = trade.get('shares', 0)
-        entry_date = trade.get('entry_date', 'Unknown')
+        # Active trades uses 'opened' field, not 'entry_date'
+        entry_date = trade.get('opened') or trade.get('entry_date', 'Unknown')
         
         # Get real-time quote
         quote = fetch_tiingo_realtime_quote(symbol, token)
