@@ -49,10 +49,19 @@ def get_active_trade_data(trade: Dict, token: str) -> Dict:
             return None
         
         # Get real-time quote
+        logger.info(f"{symbol}: Fetching real-time quote from Tiingo...")
         quote = fetch_tiingo_realtime_quote(symbol, token)
+        if not quote:
+            logger.error(f"{symbol}: fetch_tiingo_realtime_quote returned None or empty")
+            return None
         current_price = quote.get('last') or quote.get('tngoLast', 0)
+        if current_price == 0:
+            logger.error(f"{symbol}: Current price is 0 from quote: {quote}")
+            return None
+        logger.info(f"{symbol}: Got current price ${current_price}")
 
         # Get intraday data (today's price action)
+        logger.info(f"{symbol}: Fetching intraday data from Tiingo...")
         intraday_df = fetch_tiingo_intraday(symbol, token)
 
         # Calculate today's metrics from intraday
@@ -68,10 +77,14 @@ def get_active_trade_data(trade: Dict, token: str) -> Dict:
             intraday_change_pct = 0
 
         # Get historical data (last 20 days for context)
+        logger.info(f"{symbol}: Fetching historical data (20 days) from Tiingo...")
         df = tiingo_history(symbol, token, days=20)
-        
+
         if df is None or df.empty:
+            logger.error(f"{symbol}: tiingo_history returned None or empty DataFrame")
+            logger.error(f"{symbol}: This usually means Tiingo API failed or symbol doesn't exist")
             return None
+        logger.info(f"{symbol}: Got {len(df)} days of historical data")
         
         # Calculate P&L
         pnl_per_share = current_price - entry
