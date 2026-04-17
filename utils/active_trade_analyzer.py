@@ -5,13 +5,13 @@ Analyzes active trades with real-time data and provides actionable recommendatio
 
 import anthropic
 from typing import List, Dict
-from utils.tiingo_api import fetch_tiingo_realtime_quote, tiingo_history, fetch_tiingo_intraday
+from utils.tiingo_api import tiingo_history
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 
-def get_active_trade_data(trade: Dict, token: str) -> Dict:
+def get_active_trade_data(trade: Dict, token: str):
     """
     Fetch comprehensive data for an active trade.
 
@@ -30,79 +30,15 @@ def get_active_trade_data(trade: Dict, token: str) -> Dict:
         shares = trade.get('shares', 0)
         # Active trades uses 'opened' field, not 'entry_date'
         entry_date = trade.get('opened') or trade.get('entry_date', 'Unknown')
-
-        # DEBUG: Log what we have
-        logger.info(f"Fetching data for {symbol}: entry={entry}, stop={stop}, target={target}, shares={shares}, date={entry_date}")
-
-        # Validate required fields
-        if not symbol:
-            logger.error("No symbol provided")
-            return None
-        if entry == 0:
-            logger.error(f"{symbol}: No entry price (entry=0)")
-            return None
-        if stop == 0:
-            logger.error(f"{symbol}: No stop loss (stop=0)")
-            return None
-        if target == 0:
-            logger.error(f"{symbol}: No target (target=0)")
-            return None
         
-        # Get real-time quote
-        logger.info(f"{symbol}: Fetching real-time quote from Tiingo...")
-        quote = fetch_tiingo_realtime_quote(symbol, token)
-        if not quote:
-            logger.error(f"{symbol}: fetch_tiingo_realtime_quote returned None or empty - Trying historical data instead...")
-            # Fallback to historical data if real-time fails
-            df_fallback = tiingo_history(symbol, token, days=5)
-            if df_fallback is None or df_fallback.empty:
-                logger.error(f"{symbol}: Both real-time and historical data failed")
-                return None
-            current_price = float(df_fallback.iloc[-1]['Close'])
-            logger.info(f"{symbol}: Got current price ${current_price} from historical data (fallback)")
-        else:
-            current_price = quote.get('last') or quote.get('tngoLast', 0)
-            if current_price == 0:
-                logger.error(f"{symbol}: Current price is 0 from quote: {quote}")
-                return None
-            logger.info(f"{symbol}: Got current price ${current_price}")
-
-        # Get intraday data (today's price action) - OPTIONAL
-        logger.info(f"{symbol}: Fetching intraday data from Tiingo...")
-        intraday_df = fetch_tiingo_intraday(symbol, token)
-
-        # Calculate today's metrics from intraday (if available)
-        if intraday_df is not None and not intraday_df.empty:
-            try:
-                today_open = intraday_df['open'].iloc[0]
-                today_high = intraday_df['high'].max()
-                today_low = intraday_df['low'].min()
-                intraday_change_pct = ((current_price - today_open) / today_open * 100) if today_open > 0 else 0
-                logger.info(f"{symbol}: Got intraday data - Open: ${today_open}, High: ${today_high}, Low: ${today_low}")
-            except:
-                # Intraday might have wrong columns, use fallback
-                today_open = current_price
-                today_high = current_price
-                today_low = current_price
-                intraday_change_pct = 0
-                logger.warning(f"{symbol}: Intraday data malformed, using fallback")
-        else:
-            # No intraday data - use current price as fallback
-            today_open = current_price
-            today_high = current_price
-            today_low = current_price
-            intraday_change_pct = 0
-            logger.warning(f"{symbol}: No intraday data available (might require premium Tiingo plan), using current price as fallback")
-
-        # Get historical data (last 20 days for context)
-        logger.info(f"{symbol}: Fetching historical data (20 days) from Tiingo...")
+        # Get historical data (last 20 days)
         df = tiingo_history(symbol, token, days=20)
 
         if df is None or df.empty:
-            logger.error(f"{symbol}: tiingo_history returned None or empty DataFrame")
-            logger.error(f"{symbol}: This usually means Tiingo API failed or symbol doesn't exist")
             return None
-        logger.info(f"{symbol}: Got {len(df)} days of historical data")
+
+        # Get current price from latest close
+        current_price = float(df.iloc[-1]['Close'])
         
         # Calculate P&L
         pnl_per_share = current_price - entry
@@ -122,7 +58,7 @@ def get_active_trade_data(trade: Dict, token: str) -> Dict:
         current_rsi = rsi.iloc[-1] if not rsi.empty else 50
         
         # Volume analysis
-        current_volume = quote.get('volume', 0)
+        current_volume = df.iloc[-1]['Volume']
         avg_volume = df['Volume'].mean()
         volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1.0
         
@@ -172,11 +108,7 @@ def get_active_trade_data(trade: Dict, token: str) -> Dict:
             "ema50": round(ema50, 2) if ema50 else None,
             "recent_high_20d": round(recent_high, 2),
             "recent_low_20d": round(recent_low, 2),
-            "trend": trend,
-            "today_open": round(today_open, 2),
-            "today_high": round(today_high, 2),
-            "today_low": round(today_low, 2),
-            "intraday_change_pct": round(intraday_change_pct, 2)
+            "trend": trend
         }
     
     except Exception as e:
@@ -280,12 +212,8 @@ ENTRY:
 - Target: ${trade['target']}
 - Position: {trade['shares']} shares
 
-TODAY'S INTRADAY ACTION (REAL-TIME):
-- Open: ${trade.get('today_open', 0):.2f}
-- Current: ${trade.get('current_price', 0):.2f} (LIVE from Tiingo)
-- Today's High: ${trade.get('today_high', 0):.2f}
-- Today's Low: ${trade.get('today_low', 0):.2f}
-- Intraday Change: {trade.get('intraday_change_pct', 0):+.1f}%
+CURRENT STATUS (REAL-TIME FROM TIINGO):
+- Current Price: ${trade['current_price']:.2f} (LIVE)
 
 POSITION STATUS:
 - P&L: ${trade.get('pnl_per_share', 0):.2f} per share ({trade.get('pnl_percent', 0):+.1f}%)
