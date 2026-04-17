@@ -212,24 +212,26 @@ ENTRY:
 - Target: ${trade['target']}
 - Position: {trade['shares']} shares
 
-CURRENT STATUS (REAL-TIME FROM TIINGO):
-- Current Price: ${trade['current_price']:.2f} (LIVE)
+CURRENT STATUS:
+- Symbol: {trade['symbol']}
+- Entry: ${trade['entry_price']:.2f}
+- Current: ${trade['current_price']:.2f}
+- Stop: ${trade['stop_loss']:.2f}
+- Target: ${trade['target']:.2f}
 
-POSITION STATUS:
-- P&L: ${trade.get('pnl_per_share', 0):.2f} per share ({trade.get('pnl_percent', 0):+.1f}%)
-- Total P&L: ${trade.get('pnl_total', 0):+,.2f}
-- Distance to Stop: {trade.get('distance_to_stop_pct', 0):.1f}% away
-- Distance to Target: {trade.get('distance_to_target_pct', 0):.1f}% away
+POSITION P&L:
+- Per Share: ${trade['pnl_per_share']:.2f} ({trade['pnl_percent']:+.1f}%)
+- Total: ${trade['pnl_total']:+,.2f}
+- Days in Trade: {trade['days_in_trade']}
 
-TECHNICAL ANALYSIS (EOD + INTRADAY):
-- RSI (14): {trade.get('rsi', 0):.1f}
-- Volume: {trade.get('volume_ratio', 0):.1f}x average
-- EMA20: ${trade.get('ema20', 0):.2f}
-- EMA50: ${trade.get('ema50', 0):.2f} (or 'N/A' if {trade.get('ema50', 0)} == 0)
-- Trend: {trade.get('trend', 'Unknown')}
-- 20-Day High: ${trade.get('recent_high_20d', 0):.2f} (resistance)
-- 20-Day Low: ${trade.get('recent_low_20d', 0):.2f} (support)
-- Last 5 daily closes: {trade.get('recent_closes', [])}
+RISK METRICS:
+- Distance to Stop: {trade['distance_to_stop_pct']:.1f}% away
+- Distance to Target: {trade['distance_to_target_pct']:.1f}% away
+
+TECHNICAL:
+- RSI: {trade['rsi']:.1f}
+- Volume Ratio: {trade['volume_ratio']:.1f}x
+- Recent Closes: {trade['recent_closes']}
 
 """
         
