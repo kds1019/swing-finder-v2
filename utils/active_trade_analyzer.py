@@ -281,27 +281,27 @@ ENTRY:
 - Position: {trade['shares']} shares
 
 TODAY'S INTRADAY ACTION (REAL-TIME):
-- Open: ${trade['today_open']:.2f}
-- Current: ${trade['current_price']:.2f} (LIVE from Tiingo)
-- Today's High: ${trade['today_high']:.2f}
-- Today's Low: ${trade['today_low']:.2f}
-- Intraday Change: {trade['intraday_change_pct']:+.1f}%
+- Open: ${trade.get('today_open', 0):.2f}
+- Current: ${trade.get('current_price', 0):.2f} (LIVE from Tiingo)
+- Today's High: ${trade.get('today_high', 0):.2f}
+- Today's Low: ${trade.get('today_low', 0):.2f}
+- Intraday Change: {trade.get('intraday_change_pct', 0):+.1f}%
 
 POSITION STATUS:
-- P&L: ${trade['pnl_per_share']} per share ({trade['pnl_percent']:+.1f}%)
-- Total P&L: ${trade['pnl_total']:+,.2f}
-- Distance to Stop: {trade['distance_to_stop_pct']:.1f}% away
-- Distance to Target: {trade['distance_to_target_pct']:.1f}% away
+- P&L: ${trade.get('pnl_per_share', 0):.2f} per share ({trade.get('pnl_percent', 0):+.1f}%)
+- Total P&L: ${trade.get('pnl_total', 0):+,.2f}
+- Distance to Stop: {trade.get('distance_to_stop_pct', 0):.1f}% away
+- Distance to Target: {trade.get('distance_to_target_pct', 0):.1f}% away
 
 TECHNICAL ANALYSIS (EOD + INTRADAY):
-- RSI (14): {trade['rsi']:.1f}
-- Volume: {trade['volume_ratio']:.1f}x average
-- EMA20: ${trade['ema20']:.2f}
-- EMA50: ${trade['ema50']:.2f} if trade.get('ema50') else 'N/A (insufficient data)'
+- RSI (14): {trade.get('rsi', 0):.1f}
+- Volume: {trade.get('volume_ratio', 0):.1f}x average
+- EMA20: ${trade.get('ema20', 0):.2f}
+- EMA50: ${trade.get('ema50', 0):.2f} (or 'N/A' if {trade.get('ema50', 0)} == 0)
 - Trend: {trade.get('trend', 'Unknown')}
-- 20-Day High: ${trade['recent_high_20d']:.2f} (resistance)
-- 20-Day Low: ${trade['recent_low_20d']:.2f} (support)
-- Last 5 daily closes: {trade['recent_closes']}
+- 20-Day High: ${trade.get('recent_high_20d', 0):.2f} (resistance)
+- 20-Day Low: ${trade.get('recent_low_20d', 0):.2f} (support)
+- Last 5 daily closes: {trade.get('recent_closes', [])}
 
 """
         
