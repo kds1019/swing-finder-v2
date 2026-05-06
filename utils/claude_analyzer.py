@@ -105,12 +105,13 @@ def get_market_context() -> Dict[str, Any]:
 def get_stock_data_for_claude(symbol: str, stock_info: Dict, token: str) -> Dict[str, Any]:
     """
     Fetch comprehensive real-time data for a stock to send to Claude.
-    
+    Includes 52W high/low and 6-month trend for richer AI context.
+
     Args:
         symbol: Stock ticker
         stock_info: Enhanced watchlist entry with entry/stop/target
         token: Tiingo API token
-    
+
     Returns:
         Dictionary with all relevant stock data
     """
@@ -118,42 +119,54 @@ def get_stock_data_for_claude(symbol: str, stock_info: Dict, token: str) -> Dict
         # Get real-time quote
         quote = fetch_tiingo_realtime_quote(symbol, token)
         current_price = quote.get('last') or quote.get('tngoLast', 0)
-        
-        # Get historical data (last 20 days)
-        df = tiingo_history(symbol, token, days=20)
-        
+
+        # Get 252 days of history for 52W/6M context; fall back to 20 if unavailable
+        df = tiingo_history(symbol, token, days=252)
+
         if df is None or df.empty:
             return None
-        
-        # Calculate metrics
+
+        # Calculate metrics using recent 20 bars for short-term indicators
+        df_recent = df.tail(20)
         prev_close = df['Close'].iloc[-2] if len(df) > 1 else current_price
         gap_pct = ((current_price - prev_close) / prev_close * 100) if prev_close > 0 else 0
-        
+
         # Volume analysis
         current_volume = quote.get('volume', 0)
-        avg_volume = df['Volume'].mean()
+        avg_volume = df_recent['Volume'].mean()
         volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1.0
-        
-        # Calculate RSI (simple 14-period)
+
+        # Calculate RSI (14-period) using full history for accuracy
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
         current_rsi = rsi.iloc[-1] if not rsi.empty else 50
-        
+
         # Recent price action (last 5 days)
         recent_closes = df['Close'].tail(5).tolist()
-        
+
+        # --- 52-Week & 6-Month Trend Context ---
+        high_52w = round(df['High'].tail(252).max(), 2)
+        low_52w  = round(df['Low'].tail(252).min(), 2)
+        pct_below_52w_high = round((high_52w - current_price) / high_52w * 100, 1) if high_52w else 0
+        pct_above_52w_low  = round((current_price - low_52w) / low_52w * 100, 1) if low_52w else 0
+
+        # 6-month trend: compare current price to price ~126 trading days ago
+        price_6m_ago = round(float(df['Close'].iloc[-126]), 2) if len(df) >= 126 else round(float(df['Close'].iloc[0]), 2)
+        trend_6m_pct = round((current_price - price_6m_ago) / price_6m_ago * 100, 1) if price_6m_ago else 0
+        trend_6m_dir = "UP" if trend_6m_pct > 3 else "DOWN" if trend_6m_pct < -3 else "FLAT"
+
         # Calculate risk/reward
         entry = stock_info.get('entry', current_price)
         stop = stock_info.get('stop', 0)
         target = stock_info.get('target', 0)
-        
+
         risk = abs(entry - stop) if stop > 0 else 0
         reward = abs(target - entry) if target > 0 else 0
         rr_ratio = reward / risk if risk > 0 else 0
-        
+
         # Fetch recent news headlines (yfinance - free, no extra API needed)
         news_headlines = get_stock_news(symbol, days=7)
 
@@ -171,8 +184,16 @@ def get_stock_data_for_claude(symbol: str, stock_info: Dict, token: str) -> Dict
             "recent_closes": [round(c, 2) for c in recent_closes],
             "notes": stock_info.get('notes', ''),
             "news_headlines": news_headlines,
+            # 52W / 6M trend context
+            "high_52w": high_52w,
+            "low_52w": low_52w,
+            "pct_below_52w_high": pct_below_52w_high,
+            "pct_above_52w_low": pct_above_52w_low,
+            "price_6m_ago": price_6m_ago,
+            "trend_6m_pct": trend_6m_pct,
+            "trend_6m_dir": trend_6m_dir,
         }
-    
+
     except Exception as e:
         logger.error(f"Error fetching data for {symbol}: {e}")
         return None
@@ -180,8 +201,10 @@ def get_stock_data_for_claude(symbol: str, stock_info: Dict, token: str) -> Dict
 
 def quick_analyze_watchlist(watchlist: List[Dict], token: str, api_key: str) -> str:
     """
-    Quick analysis of entire watchlist using Haiku (fast & cheap).
+    Quick analysis of entire watchlist using Sonnet (fast scan).
     Returns top 3-5 picks with brief reasoning.
+    Includes 52W/6M trend context and recent news per stock.
+    Uses prompt caching on the system prompt for cost savings.
 
     Args:
         watchlist: Enhanced watchlist with entry/stop/target
@@ -189,7 +212,7 @@ def quick_analyze_watchlist(watchlist: List[Dict], token: str, api_key: str) -> 
         api_key: Anthropic API key
 
     Returns:
-        Claude's quick analysis (Haiku)
+        Claude's quick analysis
     """
     try:
         # Fetch real-time data for all stocks
@@ -209,54 +232,70 @@ def quick_analyze_watchlist(watchlist: List[Dict], token: str, api_key: str) -> 
         # Fetch current market context (SPY + VIX)
         mkt = get_market_context()
 
-        # Build prompt for quick analysis
+        # --- System prompt (cached for cost savings) ---
+        system_prompt = (
+            "You are a professional swing trading analyst. You rank watchlist stocks by their "
+            "immediate trading opportunity using ONLY the live data and news provided — NOT your training data. "
+            "Treat all prices, indicators, and headlines as current real-time information. "
+            "Ranking criteria: Risk:Reward (2:1 minimum), volume confirmation, RSI zone, "
+            "news sentiment, 52-week trend position, and market context."
+        )
+
+        # --- Market context block ---
         mkt_section = ""
         if mkt:
             mkt_section = (
-                f"\n=== LIVE MARKET CONTEXT ===\n"
-                f"SPY: ${mkt['spy_price']} | Today: {mkt['spy_day_change']:+.1f}% | 5-Day: {mkt['spy_5d_change']:+.1f}%\n"
+                f"=== LIVE MARKET CONTEXT (as of today) ===\n"
+                f"SPY: ${mkt['spy_price']} | Day: {mkt['spy_day_change']:+.1f}% | 5-Day: {mkt['spy_5d_change']:+.1f}%\n"
                 f"Market Trend: {mkt['market_trend']}\n"
-                f"VIX: {mkt['vix']} → {mkt['fear_level']}\n"
-                f"(Data as of today — use this as your current market backdrop)\n\n"
+                f"VIX: {mkt['vix']} → {mkt['fear_level']}\n\n"
             )
 
-        prompt = f"""You are a swing trading analyst. Quickly analyze this watchlist and give me the TOP 3-5 stocks to trade TODAY.
-
-{mkt_section}=== WATCHLIST ({len(stocks_data)} stocks) ===
-
-"""
-
+        # --- Per-stock data block ---
+        stocks_block = ""
         for i, stock in enumerate(stocks_data, 1):
             news = stock.get("news_headlines", [])
-            news_line = ""
-            if news:
-                news_line = f"\n   Recent News: {' | '.join(news[:3])}"
-            prompt += (
+            news_line = f"\n   News: {' | '.join(news[:3])}" if news else ""
+            trend_arrow = "↑" if stock['trend_6m_dir'] == "UP" else "↓" if stock['trend_6m_dir'] == "DOWN" else "→"
+            stocks_block += (
                 f"{i}. {stock['symbol']} ${stock['current_price']} | {stock['setup_type']}"
                 f" | Entry: ${stock['entry']:.2f} Stop: ${stock['stop']:.2f} Target: ${stock['target']:.2f}"
-                f" | R:R: {stock['rr_ratio']:.1f}:1 | Gap: {stock['gap_percent']:+.1f}%"
-                f" | Vol: {stock['volume_ratio']:.1f}x | RSI: {stock['rsi']:.0f}"
-                f"{news_line}\n"
+                f" | R:R: {stock['rr_ratio']:.1f}:1 | RSI: {stock['rsi']:.0f}"
+                f" | Vol: {stock['volume_ratio']:.1f}x | Gap: {stock['gap_percent']:+.1f}%\n"
+                f"   52W: High ${stock['high_52w']} / Low ${stock['low_52w']}"
+                f" | {stock['pct_below_52w_high']:.1f}% below 52W high"
+                f" | {stock['pct_above_52w_low']:.1f}% above 52W low\n"
+                f"   6-Month Trend: {trend_arrow} {stock['trend_6m_pct']:+.1f}% (was ${stock['price_6m_ago']})"
+                f"{news_line}\n\n"
             )
 
-        prompt += """
+        user_prompt = (
+            f"{mkt_section}"
+            f"=== WATCHLIST ({len(stocks_data)} stocks) ===\n\n"
+            f"{stocks_block}"
+            "Using the LIVE data and news above (not your training data), provide:\n"
+            "1. Top 3-5 picks (ranked best to worst) with ticker and star rating ⭐\n"
+            "2. Brief reason for each (1-2 sentences) — mention news or 52W trend if relevant\n"
+            "3. Position size (full/half/small) based on market conditions and VIX\n"
+            "4. Any stocks to avoid and why\n\n"
+            "Be concise and actionable."
+        )
 
-Using the LIVE market context and news above (not your training data), provide:
-1. Top 3-5 picks (ranked best to worst)
-2. Brief reason for each (1-2 sentences) — mention any relevant news
-3. Position size (full/half/small) based on market conditions
-4. Stocks to avoid and why
-
-Be concise and actionable."""
-
-        # Call Claude API with Haiku (fast & cheap)
+        # Call Claude API with system prompt caching
         client = anthropic.Anthropic(api_key=api_key)
 
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",  # Quick analysis with Sonnet 4
-            max_tokens=800,  # Keep it brief for speed
+            model="claude-sonnet-4-20250514",
+            max_tokens=900,
+            system=[
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"}  # Cache system prompt (~90% cost savings on repeats)
+                }
+            ],
             messages=[
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": user_prompt}
             ]
         )
 
@@ -271,7 +310,8 @@ Be concise and actionable."""
 def deep_analyze_stocks(selected_stocks: List[Dict], token: str, api_key: str) -> str:
     """
     Deep analysis of selected stocks using Sonnet (detailed & thorough).
-    With prompt caching for cost savings on repeated analyses.
+    Includes 52W/6M trend context, recent news, and live market backdrop.
+    Uses prompt caching on the system prompt for cost savings.
 
     Args:
         selected_stocks: List of selected stocks to analyze in detail
@@ -296,76 +336,83 @@ def deep_analyze_stocks(selected_stocks: List[Dict], token: str, api_key: str) -
         if not stocks_data:
             return "❌ No stock data available to analyze."
 
-        # Build system prompt (this will be cached for cost savings)
-        system_prompt = """You are an expert swing trading analyst with deep knowledge of technical analysis, risk management, and market psychology.
+        # Fetch live market context (SPY + VIX)
+        mkt = get_market_context()
 
-Your analysis should include:
-- Detailed technical breakdown (support/resistance, indicators, patterns)
-- Volume analysis and institutional interest
-- Entry timing and price levels
-- Risk assessment and position sizing
-- Market context and correlation
+        # --- System prompt (cached for cost savings) ---
+        system_prompt = (
+            "You are an expert swing trading analyst with deep knowledge of technical analysis, "
+            "risk management, and market psychology. "
+            "Base your analysis ONLY on the live data and news provided — NOT your training data. "
+            "Treat all prices, indicators, headlines, and market context as current real-time information.\n\n"
+            "Your analysis should include:\n"
+            "- Detailed technical breakdown (entry quality, stop placement, target logic)\n"
+            "- 52-week trend position: is this stock near highs, lows, or mid-range?\n"
+            "- 6-month momentum: is the bigger trend working for or against this setup?\n"
+            "- Volume and institutional interest\n"
+            "- News impact: does recent news support or threaten the setup?\n"
+            "- Entry timing and specific confirmation levels\n"
+            "- Risk assessment, position sizing, and what would invalidate the setup\n\n"
+            "Be thorough but actionable. Give specific price levels and clear recommendations."
+        )
 
-Be thorough but actionable. Provide specific price levels and clear recommendations."""
+        # --- Market context block ---
+        mkt_section = ""
+        if mkt:
+            mkt_section = (
+                f"=== LIVE MARKET CONTEXT (as of today) ===\n"
+                f"SPY: ${mkt['spy_price']} | Day: {mkt['spy_day_change']:+.1f}% | 5-Day: {mkt['spy_5d_change']:+.1f}%\n"
+                f"Market Trend: {mkt['market_trend']}\n"
+                f"VIX: {mkt['vix']} → {mkt['fear_level']}\n\n"
+            )
 
-        # Build user prompt with stock data
-        user_prompt = f"""Please provide a DEEP ANALYSIS of these {len(stocks_data)} stocks from my watchlist:
-
-"""
-
+        # --- Per-stock blocks ---
+        stocks_block = ""
         for i, stock in enumerate(stocks_data, 1):
-            user_prompt += f"""
-{'═'*50}
-{i}. {stock['symbol']} - ${stock['current_price']}
-{'═'*50}
+            news = stock.get("news_headlines", [])
+            news_section = ""
+            if news:
+                news_section = "RECENT NEWS (last 7 days — use this, not training data):\n"
+                for h in news[:5]:
+                    news_section += f"  • {h}\n"
+            else:
+                news_section = "RECENT NEWS: None found in last 7 days\n"
 
-SETUP:
-- Type: {stock['setup_type']}
-- Entry: ${stock['entry']:.2f}
-- Stop: ${stock['stop']:.2f}
-- Target: ${stock['target']:.2f}
-- Risk:Reward: {stock['rr_ratio']:.2f}:1
+            trend_arrow = "↑" if stock['trend_6m_dir'] == "UP" else "↓" if stock['trend_6m_dir'] == "DOWN" else "→"
+            stocks_block += (
+                f"{'═'*52}\n"
+                f"{i}. {stock['symbol']} — ${stock['current_price']}\n"
+                f"{'═'*52}\n\n"
+                f"SETUP:\n"
+                f"  Type: {stock['setup_type']}\n"
+                f"  Entry: ${stock['entry']:.2f} | Stop: ${stock['stop']:.2f} | Target: ${stock['target']:.2f}\n"
+                f"  Risk:Reward: {stock['rr_ratio']:.2f}:1\n\n"
+                f"52-WEEK TREND CONTEXT:\n"
+                f"  52W High: ${stock['high_52w']} | 52W Low: ${stock['low_52w']}\n"
+                f"  Current price is {stock['pct_below_52w_high']:.1f}% below 52W high\n"
+                f"  Current price is {stock['pct_above_52w_low']:.1f}% above 52W low\n"
+                f"  6-Month Trend: {trend_arrow} {stock['trend_6m_pct']:+.1f}% (price 6 months ago: ${stock['price_6m_ago']})\n\n"
+                f"CURRENT MARKET DATA:\n"
+                f"  Gap: {stock['gap_percent']:+.1f}% | Volume: {stock['volume_ratio']:.1f}x avg | RSI (14): {stock['rsi']:.1f}\n"
+                f"  Last 5 closes: {stock['recent_closes']}\n\n"
+                f"{news_section}\n"
+                f"TRADER NOTES: {stock['notes'] if stock['notes'] else 'None'}\n\n"
+            )
 
-CURRENT MARKET DATA:
-- Gap: {stock['gap_percent']:+.1f}%
-- Volume: {stock['volume_ratio']:.1f}x average volume
-- RSI (14): {stock['rsi']:.1f}
-- Last 5 closes: {stock['recent_closes']}
-
-TRADER NOTES:
-{stock['notes'] if stock['notes'] else 'None'}
-
-"""
-
-        user_prompt += """
-
-For EACH stock, provide:
-
-1. **SETUP ANALYSIS**
-   - Technical breakdown (entry quality, stop placement, target logic)
-   - Risk:Reward assessment
-
-2. **VOLUME CONVICTION**
-   - What volume is telling us (institutional interest, conviction level)
-
-3. **TECHNICAL INDICATORS**
-   - RSI interpretation
-   - Moving average context
-   - Price action analysis
-
-4. **ENTRY TIMING**
-   - Enter now, wait, or skip?
-   - Specific confirmation levels
-
-5. **POSITION SIZING**
-   - Full / Half / Small position
-   - Reasoning for size
-
-6. **RISKS TO MONITOR**
-   - What could invalidate this setup?
-   - Key levels to watch
-
-Be thorough and specific. Focus on actionable trading decisions."""
+        user_prompt = (
+            f"Please provide a DEEP ANALYSIS of these {len(stocks_data)} stocks from my watchlist.\n\n"
+            f"{mkt_section}"
+            f"{stocks_block}"
+            "For EACH stock, provide:\n\n"
+            "1. **SETUP ANALYSIS** — entry quality, stop placement, target logic, R:R assessment\n"
+            "2. **52W / 6M TREND POSITION** — where is this stock in its bigger picture? Is the trend working for or against the setup?\n"
+            "3. **NEWS IMPACT** — does recent news support or threaten the setup? Is there a catalyst?\n"
+            "4. **VOLUME CONVICTION** — what is volume telling us about institutional interest?\n"
+            "5. **ENTRY TIMING** — Enter now / Wait for confirmation / Skip? Give specific levels.\n"
+            "6. **POSITION SIZING** — Full / Half / Small, with reasoning\n"
+            "7. **RISKS TO MONITOR** — what would invalidate this setup? Key levels to watch.\n\n"
+            "Be thorough and specific. Use the LIVE data above — not your training data."
+        )
 
         # Call Claude API with prompt caching
         client = anthropic.Anthropic(api_key=api_key)
@@ -377,7 +424,7 @@ Be thorough and specific. Focus on actionable trading decisions."""
                 {
                     "type": "text",
                     "text": system_prompt,
-                    "cache_control": {"type": "ephemeral"}  # Cache system prompt
+                    "cache_control": {"type": "ephemeral"}  # Cache system prompt (~90% cost savings on repeats)
                 }
             ],
             messages=[
