@@ -510,6 +510,17 @@ def scanner_ui(TIINGO_TOKEN):
                 if nearest_resistance < target:
                     actual_target = nearest_resistance * 0.99  # just below resistance
 
+            # ✅ Recalculate R:R from the ACTUAL displayed stop and target
+            # (Fibonacci R:R above used pre-adjustment values — this keeps card consistent)
+            actual_risk   = abs(px - actual_stop)
+            actual_reward = abs(actual_target - px)
+            if actual_risk > 0:
+                rr_ratio = round(actual_reward / actual_risk, 2)
+                weak_rr  = rr_ratio < 2.0
+            else:
+                rr_ratio = 0.0
+                weak_rr  = True
+
             # --- Fibonacci Retracement Analysis ---
             fib_data = calculate_fibonacci_levels(df, lookback=20)
 
