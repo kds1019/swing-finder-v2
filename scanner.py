@@ -28,6 +28,7 @@ from utils.indicators import (
 from utils.storage import load_json, save_json, add_stock_to_enhanced_watchlist
 from utils.yahoo_fundamentals import get_yahoo_fundamentals, calculate_yahoo_fundamental_score
 from utils.target_calculator import calculate_scanner_target
+from utils.claude_analyzer import analyze_scanner_results
 
 # ---------------- Universe Loader ----------------
 from utils.universe_builder import CACHE_PATH
@@ -1243,6 +1244,40 @@ def scanner_ui(TIINGO_TOKEN):
                         st.info(f"🔥 Sector Filter: Showing only hot sectors ({', '.join(hot_sectors[:3])}). Filtered out {filtered_count} stocks.")
             except:
                 pass
+
+        # ─── AI Scanner Summary ───────────────────────────────────────────────
+        st.divider()
+        anthropic_key = (
+            st.secrets.get("swingfinder_key")
+            or st.secrets.get("ANTHROPIC_API_KEY")
+            or os.getenv("ANTHROPIC_API_KEY")
+            or os.getenv("swingfinder_key")
+        )
+
+        if not anthropic_key:
+            st.caption("💡 Add your Claude API key to unlock AI Scanner Summary.")
+        elif confirmed:
+            col_ai, col_spacer = st.columns([2, 3])
+            with col_ai:
+                run_ai = st.button(
+                    "🤖 AI Scanner Summary",
+                    type="primary",
+                    use_container_width=True,
+                    help="Claude ranks your top picks using live news, 52W highs/lows, and market context"
+                )
+            if run_ai:
+                with st.spinner("🤖 Analyzing scanner results... fetching news, 52W data, and market context..."):
+                    ai_summary = analyze_scanner_results(confirmed, TIINGO_TOKEN, anthropic_key)
+                st.session_state["scanner_ai_summary"] = ai_summary
+
+            if st.session_state.get("scanner_ai_summary"):
+                with st.expander("🤖 AI Scanner Summary", expanded=True):
+                    st.markdown(st.session_state["scanner_ai_summary"])
+                    if st.button("🗑️ Clear AI Summary", key="clear_ai_summary"):
+                        st.session_state["scanner_ai_summary"] = None
+                        st.rerun()
+        st.divider()
+        # ─────────────────────────────────────────────────────────────────────
 
         tab_confirmed, tab_near = st.tabs([
             f"✅ Confirmed Setups ({len(confirmed)})",

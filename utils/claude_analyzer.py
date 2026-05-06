@@ -7,11 +7,99 @@ import os
 from typing import List, Dict, Any
 import anthropic
 import streamlit as st
+import yfinance as yf
+from datetime import datetime, timedelta
 
 from utils.tiingo_api import fetch_tiingo_realtime_quote, tiingo_history
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def get_stock_news(symbol: str, days: int = 7) -> List[str]:
+    """
+    Fetch recent news headlines for a stock using Yahoo Finance (yfinance).
+    Returns a list of up to 5 headline strings to include in Claude prompts.
+
+    Args:
+        symbol: Stock ticker symbol
+        days: How many days back to look (default 7)
+
+    Returns:
+        List of headline strings, e.g. ["AAPL beats earnings", ...]
+    """
+    try:
+        ticker = yf.Ticker(symbol)
+        news_items = ticker.news  # list of dicts with 'title', 'providerPublishTime', etc.
+
+        if not news_items:
+            return []
+
+        cutoff_ts = (datetime.now() - timedelta(days=days)).timestamp()
+        headlines = []
+
+        for item in news_items:
+            pub_time = item.get("providerPublishTime", 0)
+            title = item.get("title", "")
+            if pub_time >= cutoff_ts and title:
+                headlines.append(title)
+            if len(headlines) >= 5:
+                break
+
+        return headlines
+
+    except Exception as e:
+        logger.warning(f"yfinance news fetch failed for {symbol}: {e}")
+        return []
+
+
+def get_market_context() -> Dict[str, Any]:
+    """
+    Fetch current market conditions using yfinance (SPY trend + VIX).
+    Returns a dict with market trend and fear level to include in Claude prompts.
+    """
+    try:
+        spy = yf.Ticker("SPY")
+        spy_hist = spy.history(period="5d")
+
+        vix = yf.Ticker("^VIX")
+        vix_hist = vix.history(period="2d")
+
+        if spy_hist.empty:
+            return {}
+
+        spy_now = float(spy_hist["Close"].iloc[-1])
+        spy_prev = float(spy_hist["Close"].iloc[-2]) if len(spy_hist) > 1 else spy_now
+        spy_5d = float(spy_hist["Close"].iloc[0])
+
+        spy_day_chg = ((spy_now - spy_prev) / spy_prev * 100) if spy_prev else 0
+        spy_5d_chg = ((spy_now - spy_5d) / spy_5d * 100) if spy_5d else 0
+
+        market_trend = (
+            "UPTREND" if spy_5d_chg > 1
+            else "DOWNTREND" if spy_5d_chg < -1
+            else "SIDEWAYS"
+        )
+
+        current_vix = float(vix_hist["Close"].iloc[-1]) if not vix_hist.empty else 20.0
+        fear_level = (
+            "HIGH FEAR (avoid new longs)" if current_vix > 25
+            else "MODERATE (trade carefully)" if current_vix > 18
+            else "LOW FEAR (good for swing trades)"
+        )
+
+        return {
+            "spy_price": round(spy_now, 2),
+            "spy_day_change": round(spy_day_chg, 2),
+            "spy_5d_change": round(spy_5d_chg, 2),
+            "market_trend": market_trend,
+            "vix": round(current_vix, 1),
+            "fear_level": fear_level,
+        }
+
+    except Exception as e:
+        logger.warning(f"Market context fetch failed: {e}")
+        return {}
 
 
 def get_stock_data_for_claude(symbol: str, stock_info: Dict, token: str) -> Dict[str, Any]:
@@ -66,6 +154,9 @@ def get_stock_data_for_claude(symbol: str, stock_info: Dict, token: str) -> Dict
         reward = abs(target - entry) if target > 0 else 0
         rr_ratio = reward / risk if risk > 0 else 0
         
+        # Fetch recent news headlines (yfinance - free, no extra API needed)
+        news_headlines = get_stock_news(symbol, days=7)
+
         return {
             "symbol": symbol,
             "current_price": round(current_price, 2),
@@ -78,7 +169,8 @@ def get_stock_data_for_claude(symbol: str, stock_info: Dict, token: str) -> Dict
             "target": target,
             "rr_ratio": round(rr_ratio, 2),
             "recent_closes": [round(c, 2) for c in recent_closes],
-            "notes": stock_info.get('notes', '')
+            "notes": stock_info.get('notes', ''),
+            "news_headlines": news_headlines,
         }
     
     except Exception as e:
@@ -114,26 +206,48 @@ def quick_analyze_watchlist(watchlist: List[Dict], token: str, api_key: str) -> 
         if not stocks_data:
             return "❌ No stock data available to analyze."
 
+        # Fetch current market context (SPY + VIX)
+        mkt = get_market_context()
+
         # Build prompt for quick analysis
+        mkt_section = ""
+        if mkt:
+            mkt_section = (
+                f"\n=== LIVE MARKET CONTEXT ===\n"
+                f"SPY: ${mkt['spy_price']} | Today: {mkt['spy_day_change']:+.1f}% | 5-Day: {mkt['spy_5d_change']:+.1f}%\n"
+                f"Market Trend: {mkt['market_trend']}\n"
+                f"VIX: {mkt['vix']} → {mkt['fear_level']}\n"
+                f"(Data as of today — use this as your current market backdrop)\n\n"
+            )
+
         prompt = f"""You are a swing trading analyst. Quickly analyze this watchlist and give me the TOP 3-5 stocks to trade TODAY.
 
-WATCHLIST ({len(stocks_data)} stocks):
+{mkt_section}=== WATCHLIST ({len(stocks_data)} stocks) ===
 
 """
 
         for i, stock in enumerate(stocks_data, 1):
-            prompt += f"""{i}. {stock['symbol']} ${stock['current_price']} | {stock['setup_type']} | Entry: ${stock['entry']:.2f} Stop: ${stock['stop']:.2f} Target: ${stock['target']:.2f} | R:R: {stock['rr_ratio']:.1f}:1 | Gap: {stock['gap_percent']:+.1f}% | Vol: {stock['volume_ratio']:.1f}x | RSI: {stock['rsi']:.0f}
-"""
+            news = stock.get("news_headlines", [])
+            news_line = ""
+            if news:
+                news_line = f"\n   Recent News: {' | '.join(news[:3])}"
+            prompt += (
+                f"{i}. {stock['symbol']} ${stock['current_price']} | {stock['setup_type']}"
+                f" | Entry: ${stock['entry']:.2f} Stop: ${stock['stop']:.2f} Target: ${stock['target']:.2f}"
+                f" | R:R: {stock['rr_ratio']:.1f}:1 | Gap: {stock['gap_percent']:+.1f}%"
+                f" | Vol: {stock['volume_ratio']:.1f}x | RSI: {stock['rsi']:.0f}"
+                f"{news_line}\n"
+            )
 
         prompt += """
 
-Provide:
-1. Top 3-5 picks (ranked)
-2. Brief reason for each (1-2 sentences)
-3. Position size (full/half/small)
-4. Stocks to avoid
+Using the LIVE market context and news above (not your training data), provide:
+1. Top 3-5 picks (ranked best to worst)
+2. Brief reason for each (1-2 sentences) — mention any relevant news
+3. Position size (full/half/small) based on market conditions
+4. Stocks to avoid and why
 
-Be concise. Focus on actionable insights."""
+Be concise and actionable."""
 
         # Call Claude API with Haiku (fast & cheap)
         client = anthropic.Anthropic(api_key=api_key)
@@ -280,3 +394,233 @@ Be thorough and specific. Focus on actionable trading decisions."""
         logger.error(f"Claude API error: {e}")
         return f"❌ Error analyzing stocks: {str(e)}"
 
+
+def analyze_scanner_results(confirmed: List[Dict], token: str, api_key: str) -> str:
+    """
+    AI Scanner Summary — ranks confirmed scanner results and highlights top picks.
+    Pulls 52W high/low + 6-month trend from Tiingo, news from yfinance, and
+    SPY/VIX market context. Uses prompt caching to keep costs low.
+
+    Args:
+        confirmed: List of confirmed scanner result dicts
+        token: Tiingo API token
+        api_key: Anthropic API key
+
+    Returns:
+        Claude's ranked top 3-5 picks with reasoning
+    """
+    try:
+        if not confirmed:
+            return "❌ No scanner results to analyze."
+
+        # Limit to top 12 by SmartScore so prompt stays concise
+        top = sorted(confirmed, key=lambda x: x.get("SmartScore", 0), reverse=True)[:12]
+
+        # Live market context — SPY trend + VIX via yfinance
+        mkt = get_market_context()
+
+        # Build the stock data section for the prompt
+        stocks_section = ""
+        for i, rec in enumerate(top, 1):
+            symbol = rec["Symbol"]
+            current_price = rec["Price"]
+
+            # Fetch 252-day history for 52W high/low and 6-month trend
+            h52w = l52w = pct_from_high = pct_from_low = trend_6m = "N/A"
+            try:
+                df = tiingo_history(symbol, token, days=252)
+                if df is not None and not df.empty:
+                    h52w = round(float(df["High"].tail(252).max()), 2)
+                    l52w = round(float(df["Low"].tail(252).min()), 2)
+                    pct_from_high = round((current_price - h52w) / h52w * 100, 1)
+                    pct_from_low  = round((current_price - l52w) / l52w * 100, 1)
+                    if len(df) >= 126:
+                        price_6m = float(df["Close"].iloc[-126])
+                        trend_6m = round((current_price - price_6m) / price_6m * 100, 1)
+            except Exception:
+                pass
+
+            # Recent news headlines via yfinance
+            news = get_stock_news(symbol, days=7)
+            news_text = " | ".join(news[:3]) if news else "No recent news"
+
+            earnings_note = rec.get("EarningsWarning", "") or ""
+
+            stocks_section += (
+                f"\n{i}. {symbol} — {rec['Setup']} | SmartScore: {rec.get('SmartScore', 'N/A')}"
+                f" | Sector: {rec.get('Sector', 'N/A')}\n"
+                f"   Price: ${current_price:.2f} | RSI: {rec['RSI14']}"
+                f" | RelVol: {rec.get('RelVolume', 1.0):.1f}x | FibZone: {rec.get('FibZone', 'N/A')}\n"
+                f"   Entry: ${current_price:.2f} | Stop: ${rec['Stop']:.2f}"
+                f" | Target: ${rec['Target']:.2f} | R:R: {rec.get('RR_Ratio', 0):.1f}:1\n"
+                f"   52W High: ${h52w} ({pct_from_high}% below high)"
+                f" | 52W Low: ${l52w} ({pct_from_low}% above low)\n"
+                f"   6-Month Trend: {trend_6m}%"
+                f"{' | ' + earnings_note if earnings_note else ''}\n"
+                f"   Recent News: {news_text}\n"
+            )
+
+        # Market context block
+        mkt_section = ""
+        if mkt:
+            mkt_section = (
+                f"=== LIVE MARKET CONTEXT ===\n"
+                f"SPY: ${mkt['spy_price']} | Today: {mkt['spy_day_change']:+.1f}%"
+                f" | 5-Day: {mkt['spy_5d_change']:+.1f}%\n"
+                f"Market Trend: {mkt['market_trend']}\n"
+                f"VIX: {mkt['vix']} → {mkt['fear_level']}\n"
+                f"(Real-time data — use this as your current backdrop, not your training data)\n\n"
+            )
+
+        system_prompt = """You are a professional swing trading analyst reviewing scanner results.
+
+RANKING CRITERIA (most important first):
+1. Risk:Reward — minimum 2:1, prefer 3:1+
+2. Volume — RelVol 1.5x+ shows real conviction
+3. RSI position — 35-50 for pullbacks, 55-65 for breakouts
+4. Fibonacci zone — discount zone entries are higher quality
+5. 6-Month trend — broader trend must support the setup direction
+6. Distance from 52-Week High — within 3% of 52W high = extended, higher risk
+7. News sentiment — recent news supporting or threatening the thesis
+8. Earnings risk — stocks with earnings in <7 days = avoid
+
+REQUIRED OUTPUT FORMAT:
+**TOP PICKS TODAY:**
+1. [SYMBOL] — [why it ranks #1, 1-2 sentences] | Key Risk: [1 sentence]
+2. [SYMBOL] — [why it ranks #2, 1-2 sentences] | Key Risk: [1 sentence]
+(list up to 5)
+
+**AVOID TODAY:**
+- [SYMBOL] — [reason in 1 sentence]
+
+**MARKET NOTE:** [1 sentence on whether conditions favor swing trading today]
+
+Be direct and specific. Traders need decisions, not analysis."""
+
+        user_prompt = (
+            f"{mkt_section}"
+            f"Scanner found {len(top)} confirmed setups today. Rank the TOP 3-5:\n"
+            f"{stocks_section}\n"
+            f"Use the live news, 52W/6M trend, and market context above — not your training data."
+        )
+
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1200,
+            system=[{
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }],
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+
+        return message.content[0].text
+
+    except Exception as e:
+        logger.error(f"Scanner AI error: {e}")
+        return f"❌ Error analyzing scanner results: {str(e)}"
+
+
+def analyze_single_stock(symbol: str, stock_data: Dict[str, Any], token: str, api_key: str) -> str:
+    """
+    Deep AI analysis of a single stock from the Analyzer page.
+    Includes 52W high/low, 6-month trend, recent news, and market context.
+
+    Args:
+        symbol: Stock ticker
+        stock_data: Dict with keys: price, rsi, ema20, ema50, entry, stop, target,
+                    rr_ratio, volume_ratio, setup_type, sector, fib_zone, atr
+        token: Tiingo API token
+        api_key: Anthropic API key
+
+    Returns:
+        Claude's detailed analysis string
+    """
+    try:
+        current_price = stock_data.get("price", 0)
+
+        # ── 52W high/low + 6-month trend from Tiingo ──
+        h52w = l52w = pct_from_high = pct_from_low = trend_6m = "N/A"
+        try:
+            df = tiingo_history(symbol, token, days=252)
+            if df is not None and not df.empty:
+                h52w = round(float(df["High"].tail(252).max()), 2)
+                l52w = round(float(df["Low"].tail(252).min()), 2)
+                pct_from_high = round((current_price - h52w) / h52w * 100, 1)
+                pct_from_low  = round((current_price - l52w) / l52w * 100, 1)
+                if len(df) >= 126:
+                    price_6m = float(df["Close"].iloc[-126])
+                    trend_6m = round((current_price - price_6m) / price_6m * 100, 1)
+        except Exception:
+            pass
+
+        # ── Recent news from yfinance ──
+        news = get_stock_news(symbol, days=7)
+        news_lines = "\n".join([f"   • {h}" for h in news]) if news else "   • No recent news found"
+
+        # ── Live market context (SPY + VIX) ──
+        mkt = get_market_context()
+        mkt_section = ""
+        if mkt:
+            mkt_section = (
+                f"=== LIVE MARKET CONTEXT ===\n"
+                f"SPY: ${mkt['spy_price']} | Today: {mkt['spy_day_change']:+.1f}%"
+                f" | 5-Day: {mkt['spy_5d_change']:+.1f}% | Trend: {mkt['market_trend']}\n"
+                f"VIX: {mkt['vix']} → {mkt['fear_level']}\n\n"
+            )
+
+        system_prompt = """You are an expert swing trading analyst. You provide deep, specific analysis of individual stock setups.
+
+Your analysis must use ONLY the data provided — not your training data. Treat all prices and news as current real-time information.
+
+Be specific with price levels. Give the trader clear decisions they can act on immediately."""
+
+        user_prompt = (
+            f"{mkt_section}"
+            f"=== STOCK: {symbol} ===\n"
+            f"Current Price: ${current_price:.2f} | Setup: {stock_data.get('setup_type', 'N/A')}"
+            f" | Sector: {stock_data.get('sector', 'N/A')}\n\n"
+            f"=== TRADE PLAN ===\n"
+            f"Entry: ${stock_data.get('entry', 0):.2f} | Stop: ${stock_data.get('stop', 0):.2f}"
+            f" | Target: ${stock_data.get('target', 0):.2f} | R:R: {stock_data.get('rr_ratio', 0):.1f}:1\n\n"
+            f"=== TECHNICAL DATA ===\n"
+            f"RSI (14): {stock_data.get('rsi', 0):.1f} | Volume: {stock_data.get('volume_ratio', 0):.1f}x avg"
+            f" | ATR: ${stock_data.get('atr', 0):.2f}\n"
+            f"EMA20: ${stock_data.get('ema20', 0):.2f} | EMA50: ${stock_data.get('ema50', 0):.2f}\n"
+            f"Fib Zone: {stock_data.get('fib_zone', 'N/A')}\n\n"
+            f"=== 6-MONTH TREND CONTEXT ===\n"
+            f"52-Week High: ${h52w} ({pct_from_high}% below high)\n"
+            f"52-Week Low:  ${l52w} ({pct_from_low}% above low)\n"
+            f"6-Month Price Change: {trend_6m}%\n\n"
+            f"=== RECENT NEWS (Last 7 Days) ===\n"
+            f"{news_lines}\n\n"
+            f"Using ONLY the data above, provide:\n\n"
+            f"**1. SETUP QUALITY** (⭐ rating 1-5 + 1 sentence why)\n"
+            f"**2. RECOMMENDATION** (Enter Now / Wait for Confirmation / Skip)\n"
+            f"   - If Wait: what exact price/signal confirms entry?\n"
+            f"**3. NEWS IMPACT** — does recent news support or threaten this setup?\n"
+            f"**4. TREND CONTEXT** — does the 6-month/52W picture confirm the trade?\n"
+            f"**5. KEY RISK** — what is the #1 thing that could invalidate this?\n"
+            f"**6. ACTION PLAN** — specific prices: entry trigger, stop level, first target\n\n"
+            f"Be direct. Give specific price levels. No vague advice."
+        )
+
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1500,
+            system=[{
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }],
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+
+        return message.content[0].text
+
+    except Exception as e:
+        logger.error(f"Analyzer AI error for {symbol}: {e}")
+        return f"❌ Error analyzing {symbol}: {str(e)}"

@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -21,6 +22,7 @@ from utils.relative_strength import (
 )
 from utils.multi_timeframe import get_multi_timeframe_analysis, format_mtf_display
 from utils.target_calculator import calculate_fibonacci_target, format_target_display
+from utils.claude_analyzer import analyze_single_stock
 
 # ===================== MOBILE OPTIMIZATION: DATA CACHING =====================
 # Cache data for 5 minutes to prevent re-fetching when switching between apps
@@ -1243,6 +1245,59 @@ def analyzer_ui(TIINGO_TOKEN):
 
         # ===================== TAB 3: ML/AI ANALYSIS =====================
         with tab3:
+
+            # ─── Claude AI Analysis ───────────────────────────────────────────
+            st.subheader("🤖 Claude AI Analysis")
+            st.caption("Live analysis using real-time data, 52W trend context, and recent news")
+
+            anthropic_key_az = (
+                st.secrets.get("swingfinder_key")
+                or st.secrets.get("ANTHROPIC_API_KEY")
+                or os.getenv("ANTHROPIC_API_KEY")
+                or os.getenv("swingfinder_key")
+            )
+
+            if not anthropic_key_az:
+                st.caption("💡 Add your Claude API key to unlock AI analysis.")
+            else:
+                if st.button("🤖 Run AI Analysis", type="primary",
+                             key="run_claude_analyzer",
+                             help="Claude analyzes this setup with live news, 52W data, and market context"):
+                    with st.spinner(f"🤖 Analyzing {symbol}... fetching news, 52W data, and market context..."):
+                        # Build stock_data dict from computed variables
+                        _fib_zone = fib_data.get("zone", "N/A") if "fib_data" in dir() and fib_data else "N/A"
+                        _vol_ratio = vol_analysis.get("relative_volume", 1.0) if "vol_analysis" in dir() else 1.0
+                        _stop = round(current_price - (atr * 2), 2)
+                        _target = round(current_price + (atr * 4), 2)
+
+                        stock_data_az = {
+                            "price": current_price,
+                            "rsi": rsi,
+                            "ema20": ema20,
+                            "ema50": ema50,
+                            "atr": atr,
+                            "volume_ratio": _vol_ratio,
+                            "setup_type": "Pullback" if rsi < 55 else "Breakout",
+                            "sector": "N/A",
+                            "fib_zone": _fib_zone,
+                            "entry": current_price,
+                            "stop": _stop,
+                            "target": _target,
+                            "rr_ratio": 2.0,
+                        }
+
+                        ai_result = analyze_single_stock(symbol, stock_data_az, TIINGO_TOKEN, anthropic_key_az)
+                        st.session_state[f"analyzer_ai_{symbol}"] = ai_result
+
+                if st.session_state.get(f"analyzer_ai_{symbol}"):
+                    st.markdown(st.session_state[f"analyzer_ai_{symbol}"])
+                    if st.button("🗑️ Clear", key="clear_analyzer_ai"):
+                        st.session_state[f"analyzer_ai_{symbol}"] = None
+                        st.rerun()
+
+            st.divider()
+            # ─────────────────────────────────────────────────────────────────
+
             # ===================== Advanced ML Forecast =====================
             with st.expander("🤖 Advanced ML Forecast", expanded=False):
                 st.caption("Ensemble machine learning price forecast using Random Forest and Gradient Boosting")
