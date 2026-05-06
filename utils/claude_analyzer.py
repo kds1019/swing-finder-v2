@@ -671,3 +671,220 @@ Be specific with price levels. Give the trader clear decisions they can act on i
     except Exception as e:
         logger.error(f"Analyzer AI error for {symbol}: {e}")
         return f"❌ Error analyzing {symbol}: {str(e)}"
+
+
+def review_single_trade(trade: Dict[str, Any], api_key: str) -> str:
+    """
+    Claude reviews a single completed journal trade.
+    Gives a post-trade breakdown: what went well, what to improve, lesson learned.
+
+    Args:
+        trade: Journal trade dict (symbol, entry/exit prices, P&L, notes, etc.)
+        api_key: Anthropic API key
+
+    Returns:
+        Claude's trade review as a string
+    """
+    try:
+        symbol      = trade.get("symbol", "UNKNOWN")
+        entry_price = trade.get("entry_price", trade.get("entry", 0))
+        exit_price  = trade.get("exit_price", 0)
+        shares      = trade.get("shares", 0)
+        pnl         = trade.get("pnl_dollar", 0)
+        pnl_pct     = trade.get("pnl_percent", 0)
+        r_mult      = trade.get("r_multiple", 0)
+        setup       = trade.get("setup_type", "Unknown")
+        exit_reason = trade.get("exit_reason", "Unknown")
+        entry_date  = trade.get("entry_date", trade.get("opened", "Unknown"))
+        exit_date   = trade.get("exit_date", "Unknown")
+        notes       = trade.get("notes", "")
+
+        # Days held
+        try:
+            from datetime import datetime as _dt
+            days_held = (_dt.fromisoformat(str(exit_date)) - _dt.fromisoformat(str(entry_date))).days
+        except Exception:
+            days_held = 0
+
+        outcome = "WIN ✅" if pnl > 0 else "LOSS ❌"
+
+        system_prompt = (
+            "You are an expert swing trading coach reviewing a completed trade from a trader's journal. "
+            "Your goal is to give honest, specific, actionable feedback — not just praise. "
+            "Focus on process quality (did they follow good trading rules?) not just outcome. "
+            "A losing trade executed perfectly is better than a winning trade taken recklessly."
+        )
+
+        user_prompt = (
+            f"Please review this completed trade from my journal:\n\n"
+            f"{'═'*48}\n"
+            f"TRADE: {symbol} — {outcome}\n"
+            f"{'═'*48}\n"
+            f"Entry: ${entry_price:.2f} on {entry_date}\n"
+            f"Exit:  ${exit_price:.2f} on {exit_date}\n"
+            f"Shares: {shares} | Days held: {days_held}\n"
+            f"P&L: ${pnl:+,.2f} ({pnl_pct:+.1f}%) | R-Multiple: {r_mult:.2f}R\n"
+            f"Setup Type: {setup}\n"
+            f"Exit Reason: {exit_reason}\n\n"
+            f"MY NOTES:\n{notes if notes else 'No notes recorded.'}\n\n"
+            "Please provide:\n\n"
+            "**1. TRADE GRADE** (A / B / C / D — grade the PROCESS, not just the outcome)\n"
+            "**2. WHAT WENT WELL** — 1-2 specific things done right\n"
+            "**3. WHAT TO IMPROVE** — 1-2 honest critiques with specific suggestions\n"
+            "**4. EXIT ANALYSIS** — was the exit reason good? Did they hold too long / exit too early?\n"
+            "**5. KEY LESSON** — one concrete rule or habit to take away from this trade\n\n"
+            "Be direct and specific. Grade honestly — a C or D is more useful than false praise."
+        )
+
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=900,
+            system=[{
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }],
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+
+        return message.content[0].text
+
+    except Exception as e:
+        logger.error(f"Claude trade review error: {e}")
+        return f"❌ Error reviewing trade: {str(e)}"
+
+
+def coach_trading_performance(trades: List[Dict[str, Any]], focus: str, api_key: str) -> str:
+    """
+    Claude coaches the trader based on their journal history.
+    Supports four coaching modes: general, psychology, strategy, risk.
+
+    Args:
+        trades: List of journal trade dicts
+        focus: Coaching mode — "general" | "psychology" | "strategy" | "risk"
+        api_key: Anthropic API key
+
+    Returns:
+        Claude's coaching response as a string
+    """
+    try:
+        if not trades:
+            return "❌ No trades to analyze. Add some journal entries first."
+
+        wins   = [t for t in trades if t.get("pnl_dollar", 0) > 0]
+        losses = [t for t in trades if t.get("pnl_dollar", 0) <= 0]
+
+        total_pnl   = sum(t.get("pnl_dollar", 0) for t in trades)
+        win_rate    = (len(wins) / len(trades) * 100) if trades else 0
+        avg_win     = sum(t.get("pnl_dollar", 0) for t in wins) / len(wins) if wins else 0
+        avg_loss    = sum(t.get("pnl_dollar", 0) for t in losses) / len(losses) if losses else 0
+        avg_r       = sum(t.get("r_multiple", 0) for t in trades) / len(trades) if trades else 0
+        profit_factor = abs(avg_win / avg_loss) if avg_loss != 0 else 0
+
+        # Summarise exit reason breakdown
+        exit_counts: Dict[str, int] = {}
+        setup_pnl:   Dict[str, float] = {}
+        for t in trades:
+            er = t.get("exit_reason", "Unknown")
+            exit_counts[er] = exit_counts.get(er, 0) + 1
+            st = t.get("setup_type", "Unknown")
+            setup_pnl[st] = setup_pnl.get(st, 0) + t.get("pnl_dollar", 0)
+
+        exit_lines = "\n".join(f"  {r}: {c}x" for r, c in sorted(exit_counts.items(), key=lambda x: -x[1]))
+        setup_lines = "\n".join(f"  {s}: ${p:+,.2f}" for s, p in sorted(setup_pnl.items(), key=lambda x: -x[1]))
+
+        # Last 10 trades detail
+        trade_lines = ""
+        for t in trades[-10:]:
+            sym  = t.get("symbol", "")
+            ep   = t.get("entry_price", t.get("entry", 0))
+            xp   = t.get("exit_price", 0)
+            pnl  = t.get("pnl_dollar", 0)
+            pp   = t.get("pnl_percent", 0)
+            rm   = t.get("r_multiple", 0)
+            er   = t.get("exit_reason", "")
+            st   = t.get("setup_type", "")
+            nt   = t.get("notes", "")
+            trade_lines += (
+                f"  {sym}: ${ep:.2f}→${xp:.2f} | {pnl:+,.2f} ({pp:+.1f}%) | {rm:.2f}R"
+                f" | {st} | Exit: {er}\n"
+                + (f"    Notes: {nt}\n" if nt else "")
+            )
+
+        # Focus-specific coaching question
+        focus_map = {
+            "general": (
+                "📊 General Performance Review",
+                "1. What patterns do you see in my wins vs losses?\n"
+                "2. What is my biggest weakness based on this data?\n"
+                "3. What should I prioritize improving next?\n"
+                "4. Any specific habits to build or break?"
+            ),
+            "psychology": (
+                "🧠 Trading Psychology",
+                "1. Do I cut winners short or let losers run?\n"
+                "2. Do my exit reasons suggest emotional exits (revenge trading, panic, FOMO)?\n"
+                "3. What emotional patterns do you see in the data?\n"
+                "4. What discipline habits would help me most?"
+            ),
+            "strategy": (
+                "📈 Strategy & Execution",
+                "1. Which setup types are working best for me?\n"
+                "2. Are my R-multiples consistent with my stated R:R targets?\n"
+                "3. Am I entering and exiting at optimal prices?\n"
+                "4. What strategy adjustments would improve my edge?"
+            ),
+            "risk": (
+                "⚠️ Risk Management",
+                "1. Am I respecting my stop losses (check exit reasons)?\n"
+                "2. Is my average loss acceptable relative to my average win?\n"
+                "3. Is my profit factor above 1.5 (minimum sustainable)?\n"
+                "4. What risk management rules should I tighten?"
+            ),
+        }
+
+        focus_title, focus_questions = focus_map.get(focus, focus_map["general"])
+
+        system_prompt = (
+            "You are an expert swing trading coach analyzing a trader's journal history. "
+            "Be honest and direct — vague encouragement is worthless. "
+            "Focus on the PROCESS data: R-multiples, exit reasons, setup P&L breakdown. "
+            "Give specific, actionable rules and habit changes the trader can implement immediately."
+        )
+
+        user_prompt = (
+            f"Please coach me on my swing trading performance.\n\n"
+            f"{'═'*48}\n"
+            f"COACHING FOCUS: {focus_title}\n"
+            f"{'═'*48}\n\n"
+            f"PERFORMANCE SUMMARY ({len(trades)} trades):\n"
+            f"  Total P&L: ${total_pnl:+,.2f}\n"
+            f"  Win Rate: {win_rate:.1f}% ({len(wins)} wins / {len(losses)} losses)\n"
+            f"  Avg Win: ${avg_win:+,.2f} | Avg Loss: ${avg_loss:+,.2f}\n"
+            f"  Profit Factor: {profit_factor:.2f}\n"
+            f"  Avg R-Multiple: {avg_r:.2f}R\n\n"
+            f"EXIT REASON BREAKDOWN:\n{exit_lines}\n\n"
+            f"P&L BY SETUP TYPE:\n{setup_lines}\n\n"
+            f"LAST 10 TRADES:\n{trade_lines}\n"
+            f"COACHING QUESTIONS:\n{focus_questions}\n\n"
+            "Be specific and honest. Give me 3-5 concrete action items I can apply to my next trade."
+        )
+
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1200,
+            system=[{
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }],
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+
+        return message.content[0].text
+
+    except Exception as e:
+        logger.error(f"Claude coaching error: {e}")
+        return f"❌ Error generating coaching: {str(e)}"

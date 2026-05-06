@@ -2,6 +2,7 @@
 Trade Journal Page - Track, analyze, and get coaching on your trades
 """
 
+import os
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -12,108 +13,19 @@ from active_trades import (
     calculate_performance_stats,
     calculate_mistake_stats
 )
-# Removed: gpt_export import (replaced with built-in Claude AI)
+from utils.claude_analyzer import review_single_trade, coach_trading_performance
 
 
-def build_journal_coaching_prompt(trades: List[Dict[str, Any]], focus: str = "general") -> str:
-    """Build a coaching prompt based on journal entries."""
-    
-    if not trades:
-        return "No trades to analyze yet. Start trading and journal your results!"
-    
-    # Calculate stats
-    wins = [t for t in trades if t.get("pnl_dollar", 0) > 0]
-    losses = [t for t in trades if t.get("pnl_dollar", 0) <= 0]
-    
-    total_pnl = sum(t.get("pnl_dollar", 0) for t in trades)
-    win_rate = (len(wins) / len(trades) * 100) if trades else 0
-    avg_win = sum(t.get("pnl_dollar", 0) for t in wins) / len(wins) if wins else 0
-    avg_loss = sum(t.get("pnl_dollar", 0) for t in losses) / len(losses) if losses else 0
+def _get_claude_api_key() -> str:
+    """Return the Anthropic API key from Streamlit secrets or environment."""
+    return (
+        st.secrets.get("swingfinder_key")
+        or st.secrets.get("ANTHROPIC_API_KEY")
+        or os.getenv("swingfinder_key")
+        or os.getenv("ANTHROPIC_API_KEY")
+        or ""
+    )
 
-    # Calculate profit factor safely
-    if avg_loss != 0:
-        profit_factor = abs(avg_win / avg_loss)
-        profit_factor_str = f"{profit_factor:.2f}"
-    else:
-        profit_factor_str = "N/A"
-
-    prompt = f"""I need coaching on my swing trading performance. Here's my recent trading data:
-
-📊 PERFORMANCE SUMMARY ({len(trades)} trades):
-- Total P&L: ${total_pnl:,.2f}
-- Win Rate: {win_rate:.1f}% ({len(wins)} wins, {len(losses)} losses)
-- Average Win: ${avg_win:,.2f}
-- Average Loss: ${avg_loss:,.2f}
-- Profit Factor: {profit_factor_str}
-
-📝 RECENT TRADES:
-"""
-    
-    # Add last 10 trades
-    for trade in trades[-10:]:
-        symbol = trade.get("symbol", "")
-        entry = trade.get("entry_price", 0)
-        exit_p = trade.get("exit_price", 0)
-        pnl = trade.get("pnl_dollar", 0)
-        pnl_pct = trade.get("pnl_percent", 0)
-        reason = trade.get("exit_reason", "")
-        setup = trade.get("setup_type", "")
-        notes = trade.get("notes", "")
-        
-        prompt += f"""
-{symbol}: Entry ${entry:.2f} → Exit ${exit_p:.2f} | P&L: ${pnl:,.2f} ({pnl_pct:+.1f}%)
-  Setup: {setup}
-  Exit Reason: {reason}
-  Notes: {notes}
-"""
-    
-    # Add focus-specific questions
-    if focus == "general":
-        prompt += """
-
-🎯 COACHING REQUEST:
-Please analyze my trading performance and provide:
-1. What patterns do you see in my wins vs losses?
-2. Am I following my rules consistently?
-3. What's my biggest weakness based on this data?
-4. What should I focus on improving next?
-5. Any specific advice for my trading style?
-"""
-    elif focus == "psychology":
-        prompt += """
-
-🧠 PSYCHOLOGY COACHING:
-Based on my trades, help me with:
-1. Do I cut winners short or let losers run?
-2. Am I revenge trading after losses?
-3. Do I follow my stop losses?
-4. What emotional patterns do you see?
-5. How can I improve my trading discipline?
-"""
-    elif focus == "strategy":
-        prompt += """
-
-📈 STRATEGY COACHING:
-Analyze my strategy execution:
-1. Which setups work best for me?
-2. Am I entering at good prices?
-3. Are my exits optimal?
-4. Should I adjust my risk/reward targets?
-5. What strategy improvements would help most?
-"""
-    elif focus == "risk":
-        prompt += """
-
-⚠️ RISK MANAGEMENT COACHING:
-Review my risk management:
-1. Am I sizing positions correctly?
-2. Do I respect my stop losses?
-3. Is my risk/reward ratio optimal?
-4. Am I over-trading or under-trading?
-5. How can I improve my risk management?
-"""
-    
-    return prompt
 
 
 def show_journal_page():
@@ -304,9 +216,29 @@ def show_journal_page():
                             st.rerun()
 
                     with col2:
-                        # GPT Review button
-                        if st.button("💬 Get GPT Review", key=f"gpt_{idx}_{symbol}_{exit_date}", use_container_width=True):
-                            st.session_state[f"show_gpt_review_{idx}"] = True
+                        # Claude Review button
+                        if st.button("🤖 Claude Review", key=f"claude_{idx}_{symbol}_{exit_date}", use_container_width=True):
+                            api_key = _get_claude_api_key()
+                            if not api_key:
+                                st.error("❌ Claude API key not found. Add swingfinder_key to Streamlit secrets.")
+                            else:
+                                trade_for_review = {
+                                    "symbol": symbol,
+                                    "entry_price": entry_price,
+                                    "exit_price": exit_price,
+                                    "shares": trade.get("shares", 0),
+                                    "entry_date": entry_date,
+                                    "exit_date": exit_date,
+                                    "setup_type": setup,
+                                    "exit_reason": exit_reason,
+                                    "notes": new_notes,
+                                    "pnl_dollar": pnl,
+                                    "pnl_percent": pnl_pct,
+                                    "r_multiple": r_mult,
+                                }
+                                with st.spinner(f"🤖 Claude reviewing {symbol}..."):
+                                    result = review_single_trade(trade_for_review, api_key)
+                                st.session_state[f"claude_review_{idx}"] = result
 
                     with col3:
                         # Delete button
@@ -323,7 +255,6 @@ def show_journal_page():
                                 st.rerun()
                         with col2:
                             if st.button("✅ Yes, Delete", key=f"confirm_delete_yes_{idx}", use_container_width=True, type="primary"):
-                                # Remove the trade from journal
                                 journal = [t for t in journal if not (
                                     t.get("symbol") == symbol and
                                     t.get("exit_date") == exit_date
@@ -333,53 +264,23 @@ def show_journal_page():
                                 st.success(f"✅ Deleted {symbol} from journal!")
                                 st.rerun()
 
-                    # Show GPT review in expander if button clicked
-                    if st.session_state.get(f"show_gpt_review_{idx}", False):
-                        with st.expander("💬 GPT Trade Review - Copy to ChatGPT", expanded=True):
-                            # Build trade dict for GPT export
-                            trade_for_gpt = {
-                                "symbol": symbol,
-                                "entry": entry_price,
-                                "exit_price": exit_price,
-                                "shares": trade.get("shares", 0),
-                                "opened": entry_date,
-                                "exit_date": exit_date,
-                                "setup_type": setup,
-                                "exit_reason": exit_reason,
-                                "notes": new_notes,  # Use current notes
-                                "pnl_dollar": pnl,
-                                "pnl_percent": pnl_pct,
-                                "r_multiple": r_mult,
-                            }
-
-                            review_prompt = build_trade_review_for_gpt(trade_for_gpt)
-
-                            st.text_area(
-                                "Copy this to ChatGPT for detailed trade review:",
-                                value=review_prompt,
-                                height=400,
-                                key=f"gpt_area_{idx}_{symbol}_{exit_date}",
-                                help="Select all (Ctrl+A) and copy (Ctrl+C) to paste into ChatGPT"
-                            )
-
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                if st.button("📋 Copy", key=f"copy_gpt_{idx}", use_container_width=True):
-                                    st.toast("✅ Select all (Ctrl+A) and copy (Ctrl+C)!")
-                            with col2:
-                                if st.button("✅ Close", key=f"close_gpt_{idx}", use_container_width=True):
-                                    st.session_state[f"show_gpt_review_{idx}"] = False
-                                    st.rerun()
+                    # Show Claude review inline if available
+                    if st.session_state.get(f"claude_review_{idx}"):
+                        st.markdown("---")
+                        st.markdown("#### 🤖 Claude Trade Review")
+                        st.markdown(st.session_state[f"claude_review_{idx}"])
+                        if st.button("✖ Clear Review", key=f"clear_review_{idx}", use_container_width=False):
+                            del st.session_state[f"claude_review_{idx}"]
+                            st.rerun()
 
     # Tab 3: AI Coaching
     with tab3:
         st.subheader("🤖 AI Trade Coaching")
-        st.markdown("Get personalized coaching based on your journal entries")
+        st.markdown("Get personalized coaching based on your journal entries — powered by Claude")
 
         if not journal:
             st.info("No trades to analyze yet. Close some trades first!")
         else:
-            # Coaching focus
             col1, col2 = st.columns([2, 1])
             with col1:
                 focus = st.selectbox(
@@ -392,13 +293,10 @@ def show_journal_page():
                         "risk": "⚠️ Risk Management"
                     }[x]
                 )
-
             with col2:
-                # Set min/max/default based on journal size
-                min_trades = min(1, len(journal))
-                max_trades = len(journal)
+                min_trades   = min(1, len(journal))
+                max_trades   = len(journal)
                 default_trades = min(20, len(journal))
-
                 num_trades = st.number_input(
                     "Trades to analyze",
                     min_value=min_trades,
@@ -409,24 +307,30 @@ def show_journal_page():
 
             st.markdown("---")
 
-            # Generate coaching prompt
-            recent_trades = journal[-num_trades:]
-            prompt = build_journal_coaching_prompt(recent_trades, focus)
+            if st.button("🤖 Get Claude Coaching", type="primary", use_container_width=True):
+                api_key = _get_claude_api_key()
+                if not api_key:
+                    st.error("❌ Claude API key not found. Add swingfinder_key to Streamlit secrets.")
+                else:
+                    recent_trades = journal[-int(num_trades):]
+                    with st.spinner(f"🤖 Claude analyzing your last {num_trades} trades..."):
+                        coaching = coach_trading_performance(recent_trades, focus, api_key)
+                    st.session_state["journal_coaching_result"] = coaching
+                    st.session_state["journal_coaching_focus"] = focus
 
-            st.markdown("### 💬 Copy this to ChatGPT for coaching:")
-            st.text_area(
-                "Coaching Prompt (Select all and copy)",
-                value=prompt,
-                height=400,
-                help="Copy this entire prompt and paste it into ChatGPT for personalized coaching"
-            )
-
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("📋 Copy to Clipboard", use_container_width=True):
-                    st.toast("✅ Copied! Paste into ChatGPT")
-            with col2:
-                if st.button("🔄 Regenerate Prompt", use_container_width=True):
+            # Display coaching result if available
+            if st.session_state.get("journal_coaching_result"):
+                stored_focus = st.session_state.get("journal_coaching_focus", "general")
+                focus_labels = {
+                    "general": "📊 General Performance Review",
+                    "psychology": "🧠 Trading Psychology",
+                    "strategy": "📈 Strategy & Execution",
+                    "risk": "⚠️ Risk Management",
+                }
+                st.markdown(f"#### 🤖 Claude Coaching — {focus_labels.get(stored_focus, '')}")
+                st.markdown(st.session_state["journal_coaching_result"])
+                if st.button("✖ Clear", use_container_width=False):
+                    del st.session_state["journal_coaching_result"]
                     st.rerun()
 
     # Tab 4: Manual Entry
