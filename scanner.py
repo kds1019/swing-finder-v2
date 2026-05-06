@@ -502,17 +502,19 @@ def scanner_ui(TIINGO_TOKEN):
                 if px - nearest_support < atr * 3:
                     actual_stop = nearest_support * 0.995  # just below support
 
-            # Adjust target to nearest resistance if available
+            # Adjust target to nearest resistance — only if it still gives 2:1 R:R
             actual_target = target
-            if sr_levels["resistance"]:
-                nearest_resistance = sr_levels["resistance"][0]  # closest resistance above price
-                # Use resistance if it's closer than calculated target
-                if nearest_resistance < target:
-                    actual_target = nearest_resistance * 0.99  # just below resistance
+            actual_risk = abs(px - actual_stop)
+            if sr_levels["resistance"] and actual_risk > 0:
+                nearest_resistance = sr_levels["resistance"][0]
+                resistance_target  = nearest_resistance * 0.99  # just below resistance
+                resistance_reward  = abs(resistance_target - px)
+                resistance_rr      = resistance_reward / actual_risk
+                # Only use resistance target if it's closer AND still gives at least 2:1
+                if nearest_resistance < target and resistance_rr >= 2.0:
+                    actual_target = resistance_target
 
             # ✅ Recalculate R:R from the ACTUAL displayed stop and target
-            # (Fibonacci R:R above used pre-adjustment values — this keeps card consistent)
-            actual_risk   = abs(px - actual_stop)
             actual_reward = abs(actual_target - px)
             if actual_risk > 0:
                 rr_ratio = round(actual_reward / actual_risk, 2)
