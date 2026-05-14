@@ -16,21 +16,58 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-def get_stock_news(symbol: str, days: int = 7) -> List[str]:
+def get_stock_news(symbol: str, days: int = 7, token: str = "") -> List[str]:
     """
-    Fetch recent news headlines for a stock using Yahoo Finance (yfinance).
-    Returns a list of up to 5 headline strings to include in Claude prompts.
+    Fetch recent news headlines for a stock to include in Claude prompts.
+
+    Strategy:
+      1. Try Tiingo News API first (higher quality, ticker-specific).
+         Falls back silently if the plan doesn't include it (403).
+      2. Fall back to Yahoo Finance (yfinance) if Tiingo returns nothing.
 
     Args:
         symbol: Stock ticker symbol
         days: How many days back to look (default 7)
+        token: Tiingo API token (optional — uses TIINGO_TOKEN env/secret if not passed)
 
     Returns:
-        List of headline strings, e.g. ["AAPL beats earnings", ...]
+        List of up to 5 headline strings, e.g. ["AAPL beats earnings", ...]
     """
+    import os
+    import requests as _requests
+
+    # --- 1. Try Tiingo News API ---
+    try:
+        tiingo_token = token or st.secrets.get("TIINGO_TOKEN") or os.getenv("TIINGO_TOKEN") or ""
+        if tiingo_token:
+            cutoff_dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            url = "https://api.tiingo.com/tiingo/news"
+            params = {
+                "tickers": symbol.upper(),
+                "startDate": cutoff_dt,
+                "limit": 10,
+                "sortBy": "publishedDate",
+            }
+            headers = {"Authorization": f"Token {tiingo_token}"}
+            resp = _requests.get(url, params=params, headers=headers, timeout=8)
+
+            if resp.status_code == 200:
+                articles = resp.json()
+                headlines = [a["title"] for a in articles if a.get("title")][:5]
+                if headlines:
+                    logger.info(f"Tiingo news: {len(headlines)} headlines for {symbol}")
+                    return headlines
+            elif resp.status_code == 403:
+                logger.info(f"Tiingo News API not available on current plan — falling back to yfinance for {symbol}")
+            else:
+                logger.warning(f"Tiingo news returned {resp.status_code} for {symbol}")
+    except Exception as e:
+        logger.warning(f"Tiingo news fetch failed for {symbol}: {e}")
+
+    # --- 2. Fallback: Yahoo Finance (yfinance) ---
     try:
         ticker = yf.Ticker(symbol)
-        news_items = ticker.news  # list of dicts with 'title', 'providerPublishTime', etc.
+        news_items = ticker.news
 
         if not news_items:
             return []
@@ -46,10 +83,12 @@ def get_stock_news(symbol: str, days: int = 7) -> List[str]:
             if len(headlines) >= 5:
                 break
 
+        if headlines:
+            logger.info(f"yfinance news: {len(headlines)} headlines for {symbol}")
         return headlines
 
     except Exception as e:
-        logger.warning(f"yfinance news fetch failed for {symbol}: {e}")
+        logger.warning(f"yfinance news fetch also failed for {symbol}: {e}")
         return []
 
 
@@ -167,8 +206,8 @@ def get_stock_data_for_claude(symbol: str, stock_info: Dict, token: str) -> Dict
         reward = abs(target - entry) if target > 0 else 0
         rr_ratio = reward / risk if risk > 0 else 0
 
-        # Fetch recent news headlines (yfinance - free, no extra API needed)
-        news_headlines = get_stock_news(symbol, days=7)
+        # Fetch recent news: Tiingo first, yfinance fallback
+        news_headlines = get_stock_news(symbol, days=7, token=token)
 
         return {
             "symbol": symbol,

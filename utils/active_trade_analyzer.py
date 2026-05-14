@@ -98,8 +98,8 @@ def get_active_trade_data(trade: Dict, token: str):
         except Exception:
             days_in_trade = 0
 
-        # Recent news headlines (yfinance)
-        news_headlines = get_stock_news(symbol, days=7)
+        # Recent news: Tiingo first, yfinance fallback
+        news_headlines = get_stock_news(symbol, days=7, token=token)
 
         return {
             "symbol": symbol,
