@@ -26,7 +26,7 @@ from utils.indicators import (
     calculate_fibonacci_levels, get_fibonacci_zone_label
 )
 from utils.storage import load_json, save_json, add_stock_to_enhanced_watchlist
-from utils.yahoo_fundamentals import get_yahoo_fundamentals, calculate_yahoo_fundamental_score
+from utils.fundamentals import get_tiingo_fundamentals_for_claude, calculate_fundamental_score
 from utils.target_calculator import calculate_scanner_target
 from utils.claude_analyzer import analyze_scanner_results
 
@@ -813,19 +813,19 @@ def scanner_ui(TIINGO_TOKEN):
 
         progress.empty()
 
-        # --- Add fundamental scores for watchlist stocks (Yahoo Finance) ---
+        # --- Add fundamental scores for scanner results (Tiingo) ---
         if results:
-            st.info("📊 Fetching fundamental scores from Yahoo Finance...")
+            st.info("📊 Fetching fundamental scores from Tiingo...")
             fund_progress = st.progress(0, text="Fetching fundamentals...")
 
             success_count = 0
             for i, rec in enumerate(results):
                 ticker = rec["Symbol"]
                 try:
-                    fundamentals = get_yahoo_fundamentals(ticker)
+                    fund = get_tiingo_fundamentals_for_claude(ticker, TIINGO_TOKEN)
 
-                    if fundamentals:
-                        score_data = calculate_yahoo_fundamental_score(fundamentals)
+                    if fund:
+                        score_data = calculate_fundamental_score(fund)
 
                         if score_data and score_data.get("score", 0) > 0:
                             rec["FundScore"] = score_data.get("score", 0)
@@ -835,7 +835,7 @@ def scanner_ui(TIINGO_TOKEN):
                         else:
                             debug_log.append(("⚠️", f"{ticker}: Score calculated as 0"))
                     else:
-                        debug_log.append(("⚠️", f"{ticker}: No fundamental data available"))
+                        debug_log.append(("⚠️", f"{ticker}: No Tiingo fundamental data (requires Power Plan+)"))
 
                 except Exception as e:
                     debug_log.append(("⚠️", f"{ticker}: Error - {str(e)[:50]}"))
