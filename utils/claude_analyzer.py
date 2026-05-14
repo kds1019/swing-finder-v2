@@ -38,7 +38,14 @@ def get_stock_news(symbol: str, days: int = 7, token: str = "") -> List[str]:
 
     # --- 1. Try Tiingo News API ---
     try:
-        tiingo_token = token or st.secrets.get("TIINGO_TOKEN") or os.getenv("TIINGO_TOKEN") or ""
+        tiingo_token = (
+            token
+            or st.secrets.get("TIINGO_TOKEN")
+            or st.secrets.get("TIINGO_API_KEY")
+            or os.getenv("TIINGO_TOKEN")
+            or os.getenv("TIINGO_API_KEY")
+            or ""
+        )
         if tiingo_token:
             cutoff_dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
             url = "https://api.tiingo.com/tiingo/news"

@@ -1420,8 +1420,13 @@ def analyzer_ui(TIINGO_TOKEN):
                     sentiment_label = "😐 Neutral"
 
                     try:
-                        news_url = f"https://api.tiingo.com/tiingo/news?tickers={symbol}&token={TIINGO_TOKEN}"
-                        r = requests.get(news_url, timeout=5)
+                        news_url = "https://api.tiingo.com/tiingo/news"
+                        r = requests.get(
+                            news_url,
+                            params={"tickers": symbol, "limit": 5},
+                            headers={"Authorization": f"Token {TIINGO_TOKEN}"},
+                            timeout=5,
+                        )
                         if r.ok:
                             articles = r.json()[:5]  # Limit to 5 most recent
                             scores = [TextBlob(a.get("title", "")).sentiment.polarity for a in articles if a.get("title")]
