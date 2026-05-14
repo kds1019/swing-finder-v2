@@ -11,6 +11,8 @@ import yfinance as yf
 from datetime import datetime, timedelta
 
 from utils.tiingo_api import fetch_tiingo_realtime_quote, tiingo_history
+from utils.fundamentals import get_tiingo_fundamentals_for_claude, format_fundamentals_for_prompt
+from utils.indicators import detect_patterns
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -216,6 +218,18 @@ def get_stock_data_for_claude(symbol: str, stock_info: Dict, token: str) -> Dict
         # Fetch recent news: Tiingo first, yfinance fallback
         news_headlines = get_stock_news(symbol, days=7, token=token)
 
+        # Fetch Tiingo fundamentals (P/E, market cap, margins, debt, ROE…)
+        fundamentals = get_tiingo_fundamentals_for_claude(symbol, token)
+
+        # Chart pattern detection (use recent 60 bars for pattern lookback)
+        top_pattern = None
+        try:
+            patterns = detect_patterns(df.tail(60))
+            if patterns:
+                top_pattern = patterns[0]
+        except Exception:
+            pass
+
         return {
             "symbol": symbol,
             "current_price": round(current_price, 2),
@@ -238,6 +252,10 @@ def get_stock_data_for_claude(symbol: str, stock_info: Dict, token: str) -> Dict
             "price_6m_ago": price_6m_ago,
             "trend_6m_pct": trend_6m_pct,
             "trend_6m_dir": trend_6m_dir,
+            # Tiingo fundamentals
+            "fundamentals": fundamentals,
+            # Chart pattern
+            "pattern": top_pattern,
         }
 
     except Exception as e:
@@ -303,6 +321,25 @@ def quick_analyze_watchlist(watchlist: List[Dict], token: str, api_key: str) -> 
             news = stock.get("news_headlines", [])
             news_line = f"\n   News: {' | '.join(news[:3])}" if news else ""
             trend_arrow = "↑" if stock['trend_6m_dir'] == "UP" else "↓" if stock['trend_6m_dir'] == "DOWN" else "→"
+            fund = stock.get("fundamentals", {})
+            fund_line = ""
+            if fund:
+                pe   = f"P/E {fund['pe_ratio']:.1f}" if fund.get("pe_ratio") else ""
+                mkt  = (f"MCap ${fund['market_cap']/1e9:.1f}B" if (fund.get("market_cap") or 0) >= 1e9
+                        else f"MCap ${(fund.get('market_cap') or 0)/1e6:.0f}M")
+                mgn  = f"NetMgn {fund['profit_margin_pct']:.1f}%" if fund.get("profit_margin_pct") is not None else ""
+                roe  = f"ROE {fund['roe_pct']:.1f}%" if fund.get("roe_pct") is not None else ""
+                de   = f"D/E {fund['debt_to_equity']:.2f}" if fund.get("debt_to_equity") is not None else ""
+                parts = [x for x in [pe, mkt, mgn, roe, de] if x]
+                if parts:
+                    fund_line = f"\n   Fundamentals: {' | '.join(parts)}"
+
+            pat = stock.get("pattern")
+            pat_line = (
+                f"\n   Pattern: {pat['type']} ({pat['bias']}, {pat['confidence']}% conf) — {pat['action']}"
+                if pat else ""
+            )
+
             stocks_block += (
                 f"{i}. {stock['symbol']} ${stock['current_price']} | {stock['setup_type']}"
                 f" | Entry: ${stock['entry']:.2f} Stop: ${stock['stop']:.2f} Target: ${stock['target']:.2f}"
@@ -312,6 +349,8 @@ def quick_analyze_watchlist(watchlist: List[Dict], token: str, api_key: str) -> 
                 f" | {stock['pct_below_52w_high']:.1f}% below 52W high"
                 f" | {stock['pct_above_52w_low']:.1f}% above 52W low\n"
                 f"   6-Month Trend: {trend_arrow} {stock['trend_6m_pct']:+.1f}% (was ${stock['price_6m_ago']})"
+                f"{fund_line}"
+                f"{pat_line}"
                 f"{news_line}\n\n"
             )
 
@@ -425,6 +464,8 @@ def deep_analyze_stocks(selected_stocks: List[Dict], token: str, api_key: str) -
                 news_section = "RECENT NEWS: None found in last 7 days\n"
 
             trend_arrow = "↑" if stock['trend_6m_dir'] == "UP" else "↓" if stock['trend_6m_dir'] == "DOWN" else "→"
+            fund_block = format_fundamentals_for_prompt(stock.get("fundamentals", {}))
+            fund_section = f"\n{fund_block}\n" if fund_block else ""
             stocks_block += (
                 f"{'═'*52}\n"
                 f"{i}. {stock['symbol']} — ${stock['current_price']}\n"
@@ -440,7 +481,8 @@ def deep_analyze_stocks(selected_stocks: List[Dict], token: str, api_key: str) -
                 f"  6-Month Trend: {trend_arrow} {stock['trend_6m_pct']:+.1f}% (price 6 months ago: ${stock['price_6m_ago']})\n\n"
                 f"CURRENT MARKET DATA:\n"
                 f"  Gap: {stock['gap_percent']:+.1f}% | Volume: {stock['volume_ratio']:.1f}x avg | RSI (14): {stock['rsi']:.1f}\n"
-                f"  Last 5 closes: {stock['recent_closes']}\n\n"
+                f"  Last 5 closes: {stock['recent_closes']}\n"
+                f"{fund_section}"
                 f"{news_section}\n"
                 f"TRADER NOTES: {stock['notes'] if stock['notes'] else 'None'}\n\n"
             )
@@ -452,11 +494,12 @@ def deep_analyze_stocks(selected_stocks: List[Dict], token: str, api_key: str) -
             "For EACH stock, provide:\n\n"
             "1. **SETUP ANALYSIS** — entry quality, stop placement, target logic, R:R assessment\n"
             "2. **52W / 6M TREND POSITION** — where is this stock in its bigger picture? Is the trend working for or against the setup?\n"
-            "3. **NEWS IMPACT** — does recent news support or threaten the setup? Is there a catalyst?\n"
-            "4. **VOLUME CONVICTION** — what is volume telling us about institutional interest?\n"
-            "5. **ENTRY TIMING** — Enter now / Wait for confirmation / Skip? Give specific levels.\n"
-            "6. **POSITION SIZING** — Full / Half / Small, with reasoning\n"
-            "7. **RISKS TO MONITOR** — what would invalidate this setup? Key levels to watch.\n\n"
+            "3. **FUNDAMENTALS** — are the business fundamentals (margins, debt, ROE) a tailwind or headwind?\n"
+            "4. **NEWS IMPACT** — does recent news support or threaten the setup? Is there a catalyst?\n"
+            "5. **VOLUME CONVICTION** — what is volume telling us about institutional interest?\n"
+            "6. **ENTRY TIMING** — Enter now / Wait for confirmation / Skip? Give specific levels.\n"
+            "7. **POSITION SIZING** — Full / Half / Small, with reasoning\n"
+            "8. **RISKS TO MONITOR** — what would invalidate this setup? Key levels to watch.\n\n"
             "Be thorough and specific. Use the LIVE data above — not your training data."
         )
 
@@ -539,6 +582,12 @@ def analyze_scanner_results(confirmed: List[Dict], token: str, api_key: str) -> 
 
             earnings_note = rec.get("EarningsWarning", "") or ""
 
+            pat = rec.get("Pattern")
+            pattern_note = (
+                f" | Pattern: {pat['type']} ({pat['bias']}, {pat['confidence']}% conf)"
+                if pat else ""
+            )
+
             stocks_section += (
                 f"\n{i}. {symbol} — {rec['Setup']} | SmartScore: {rec.get('SmartScore', 'N/A')}"
                 f" | Sector: {rec.get('Sector', 'N/A')}\n"
@@ -549,6 +598,7 @@ def analyze_scanner_results(confirmed: List[Dict], token: str, api_key: str) -> 
                 f"   52W High: ${h52w} ({pct_from_high}% below high)"
                 f" | 52W Low: ${l52w} ({pct_from_low}% above low)\n"
                 f"   6-Month Trend: {trend_6m}%"
+                f"{pattern_note}"
                 f"{' | ' + earnings_note if earnings_note else ''}\n"
                 f"   Recent News: {news_text}\n"
             )
@@ -572,10 +622,11 @@ RANKING CRITERIA (most important first):
 2. Volume — RelVol 1.5x+ shows real conviction
 3. RSI position — 35-50 for pullbacks, 55-65 for breakouts
 4. Fibonacci zone — discount zone entries are higher quality
-5. 6-Month trend — broader trend must support the setup direction
-6. Distance from 52-Week High — within 3% of 52W high = extended, higher risk
-7. News sentiment — recent news supporting or threatening the thesis
-8. Earnings risk — stocks with earnings in <7 days = avoid
+5. Chart pattern — bullish patterns (Bull Flag, Cup & Handle, Double Bottom, Ascending Triangle) add conviction; bearish patterns (Bear Flag, Double Top, Head & Shoulders, Descending Triangle) are red flags on long setups
+6. 6-Month trend — broader trend must support the setup direction
+7. Distance from 52-Week High — within 3% of 52W high = extended, higher risk
+8. News sentiment — recent news supporting or threatening the thesis
+9. Earnings risk — stocks with earnings in <7 days = avoid
 
 REQUIRED OUTPUT FORMAT:
 **TOP PICKS TODAY:**
@@ -649,9 +700,14 @@ def analyze_single_stock(symbol: str, stock_data: Dict[str, Any], token: str, ap
         except Exception:
             pass
 
-        # ── Recent news from yfinance ──
-        news = get_stock_news(symbol, days=7)
+        # ── Recent news: Tiingo first, yfinance fallback ──
+        news = get_stock_news(symbol, days=7, token=token)
         news_lines = "\n".join([f"   • {h}" for h in news]) if news else "   • No recent news found"
+
+        # ── Tiingo fundamentals ──
+        fund = get_tiingo_fundamentals_for_claude(symbol, token)
+        fund_block = format_fundamentals_for_prompt(fund)
+        fund_section = f"\n{fund_block}\n" if fund_block else ""
 
         # ── Live market context (SPY + VIX) ──
         mkt = get_market_context()
@@ -666,7 +722,7 @@ def analyze_single_stock(symbol: str, stock_data: Dict[str, Any], token: str, ap
 
         system_prompt = """You are an expert swing trading analyst. You provide deep, specific analysis of individual stock setups.
 
-Your analysis must use ONLY the data provided — not your training data. Treat all prices and news as current real-time information.
+Your analysis must use ONLY the data provided — not your training data. Treat all prices, fundamentals, and news as current real-time information.
 
 Be specific with price levels. Give the trader clear decisions they can act on immediately."""
 
@@ -686,17 +742,19 @@ Be specific with price levels. Give the trader clear decisions they can act on i
             f"=== 6-MONTH TREND CONTEXT ===\n"
             f"52-Week High: ${h52w} ({pct_from_high}% below high)\n"
             f"52-Week Low:  ${l52w} ({pct_from_low}% above low)\n"
-            f"6-Month Price Change: {trend_6m}%\n\n"
+            f"6-Month Price Change: {trend_6m}%\n"
+            f"{fund_section}"
             f"=== RECENT NEWS (Last 7 Days) ===\n"
             f"{news_lines}\n\n"
             f"Using ONLY the data above, provide:\n\n"
             f"**1. SETUP QUALITY** (⭐ rating 1-5 + 1 sentence why)\n"
             f"**2. RECOMMENDATION** (Enter Now / Wait for Confirmation / Skip)\n"
             f"   - If Wait: what exact price/signal confirms entry?\n"
-            f"**3. NEWS IMPACT** — does recent news support or threaten this setup?\n"
-            f"**4. TREND CONTEXT** — does the 6-month/52W picture confirm the trade?\n"
-            f"**5. KEY RISK** — what is the #1 thing that could invalidate this?\n"
-            f"**6. ACTION PLAN** — specific prices: entry trigger, stop level, first target\n\n"
+            f"**3. FUNDAMENTALS CHECK** — do margins, debt, and ROE support this trade?\n"
+            f"**4. NEWS IMPACT** — does recent news support or threaten this setup?\n"
+            f"**5. TREND CONTEXT** — does the 6-month/52W picture confirm the trade?\n"
+            f"**6. KEY RISK** — what is the #1 thing that could invalidate this?\n"
+            f"**7. ACTION PLAN** — specific prices: entry trigger, stop level, first target\n\n"
             f"Be direct. Give specific price levels. No vague advice."
         )
 

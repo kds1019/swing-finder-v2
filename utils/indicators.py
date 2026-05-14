@@ -581,13 +581,212 @@ def detect_ascending_triangle(df: pd.DataFrame, lookback: int = 30) -> dict:
     }
 
 
+def detect_bearish_flag(df: pd.DataFrame, lookback: int = 20) -> dict:
+    """
+    Detect bearish flag: strong move down followed by tight upward consolidation.
+    """
+    if len(df) < lookback:
+        return {"detected": False}
+
+    recent = df.tail(lookback)
+    first_half = recent.head(lookback // 2)
+    second_half = recent.tail(lookback // 2)
+
+    # Strong initial drop (>5% decline)
+    initial_drop = (first_half["Close"].iloc[0] / first_half["Close"].iloc[-1]) - 1
+    strong_drop = initial_drop > 0.05
+
+    # Tight consolidation (range < 5% of price)
+    consolidation_range = (second_half["High"].max() - second_half["Low"].min()) / second_half["Close"].mean()
+    tight_consolidation = consolidation_range < 0.05
+
+    # Consolidation should drift slightly upward (bear flag retraces up)
+    second_half_slope = second_half["Close"].iloc[-1] - second_half["Close"].iloc[0]
+    slight_upward_drift = second_half_slope > 0
+
+    # Volume should decrease during consolidation
+    first_half_vol = first_half["Volume"].mean()
+    second_half_vol = second_half["Volume"].mean()
+    volume_decrease = second_half_vol < first_half_vol * 0.8
+
+    detected = strong_drop and tight_consolidation and slight_upward_drift
+    confidence = 0
+    if detected:
+        confidence = 60
+        if volume_decrease:
+            confidence += 20
+        if consolidation_range < 0.03:
+            confidence += 10
+        if initial_drop > 0.10:
+            confidence += 10
+
+    return {
+        "detected": detected,
+        "confidence": min(100, confidence),
+        "initial_drop": round(initial_drop * 100, 1),
+        "consolidation_range": round(consolidation_range * 100, 1),
+    }
+
+
+def detect_double_top(df: pd.DataFrame, lookback: int = 30) -> dict:
+    """
+    Detect double top: two highs at similar price with a trough in between.
+    """
+    if len(df) < lookback:
+        return {"detected": False}
+
+    recent = df.tail(lookback)
+
+    # Find the two highest points
+    highs = recent.nlargest(5, "High")
+    if len(highs) < 2:
+        return {"detected": False}
+
+    first_high_idx = highs.index[0]
+    second_high_idx = highs.index[1]
+
+    if first_high_idx > second_high_idx:
+        first_high_idx, second_high_idx = second_high_idx, first_high_idx
+
+    first_high = recent.loc[first_high_idx, "High"]
+    second_high = recent.loc[second_high_idx, "High"]
+
+    # Peaks should be within 3% of each other
+    high_similarity = abs(first_high - second_high) / first_high
+    similar_highs = high_similarity < 0.03
+
+    # There should be a trough between the two peaks
+    between = recent.loc[first_high_idx:second_high_idx]
+    if len(between) > 0:
+        trough = between["Low"].min()
+        trough_depth = (first_high - trough) / first_high
+        valid_trough = trough_depth > 0.05  # At least 5% pullback
+    else:
+        valid_trough = False
+
+    # Current price should be below the trough (breakdown)
+    current_price = recent["Close"].iloc[-1]
+    breakdown = current_price < trough * 0.99 if valid_trough else False
+
+    detected = similar_highs and valid_trough
+    confidence = 0
+    if detected:
+        confidence = 65
+        if high_similarity < 0.02:
+            confidence += 15
+        if breakdown:
+            confidence += 20
+
+    return {
+        "detected": detected,
+        "confidence": min(100, confidence),
+        "high_similarity": round(high_similarity * 100, 1),
+        "breakdown": breakdown,
+    }
+
+
+def detect_head_and_shoulders(df: pd.DataFrame, lookback: int = 40) -> dict:
+    """
+    Detect head and shoulders: left shoulder, higher head, right shoulder at similar level.
+    """
+    if len(df) < lookback:
+        return {"detected": False}
+
+    recent = df.tail(lookback)
+    quarter = lookback // 4
+
+    left_shoulder  = recent.iloc[0:quarter]
+    left_valley    = recent.iloc[quarter:2*quarter]
+    head_zone      = recent.iloc[quarter:3*quarter]
+    right_valley   = recent.iloc[2*quarter:3*quarter]
+    right_shoulder = recent.iloc[3*quarter:]
+
+    ls_high  = left_shoulder["High"].max()
+    head_high = head_zone["High"].max()
+    rs_high  = right_shoulder["High"].max()
+    neckline = (left_valley["Low"].min() + right_valley["Low"].min()) / 2
+
+    # Head must be higher than both shoulders
+    head_above_shoulders = head_high > ls_high * 1.03 and head_high > rs_high * 1.03
+
+    # Shoulders should be at similar levels (within 5%)
+    shoulder_similarity = abs(ls_high - rs_high) / ls_high
+    similar_shoulders = shoulder_similarity < 0.05
+
+    # Current price near or below neckline
+    current_price = recent["Close"].iloc[-1]
+    near_neckline = current_price <= neckline * 1.03
+    breakdown = current_price < neckline * 0.99
+
+    detected = head_above_shoulders and similar_shoulders and near_neckline
+    confidence = 0
+    if detected:
+        confidence = 65
+        if similar_shoulders and shoulder_similarity < 0.03:
+            confidence += 15
+        if breakdown:
+            confidence += 20
+
+    return {
+        "detected": detected,
+        "confidence": min(100, confidence),
+        "shoulder_similarity": round(shoulder_similarity * 100, 1),
+        "breakdown": breakdown,
+        "neckline": round(neckline, 2),
+    }
+
+
+def detect_descending_triangle(df: pd.DataFrame, lookback: int = 30) -> dict:
+    """
+    Detect descending triangle: flat support with declining highs (bearish continuation).
+    """
+    if len(df) < lookback:
+        return {"detected": False}
+
+    recent = df.tail(lookback)
+
+    # Flat support: lowest lows cluster near the same level
+    lows = recent["Low"]
+    support = lows.min()
+    touches = int(sum(lows <= support * 1.02))
+    multiple_touches = touches >= 2
+
+    # Declining highs (descending resistance)
+    first_half_highs = recent.head(lookback // 2)["High"].mean()
+    second_half_highs = recent.tail(lookback // 2)["High"].mean()
+    declining_highs = second_half_highs < first_half_highs * 0.98
+
+    # Volume contraction
+    first_half_vol = recent.head(lookback // 2)["Volume"].mean()
+    second_half_vol = recent.tail(lookback // 2)["Volume"].mean()
+    volume_contraction = second_half_vol < first_half_vol
+
+    detected = multiple_touches and declining_highs
+    confidence = 0
+    if detected:
+        confidence = 60
+        if touches >= 3:
+            confidence += 15
+        if volume_contraction:
+            confidence += 15
+        if second_half_highs < first_half_highs * 0.95:
+            confidence += 10
+
+    return {
+        "detected": detected,
+        "confidence": min(100, confidence),
+        "support_touches": touches,
+        "highs_declining": declining_highs,
+    }
+
+
 def detect_patterns(df: pd.DataFrame) -> list:
     """
-    Detect all chart patterns and return list of detected patterns.
+    Detect all chart patterns (bullish and bearish) and return sorted by confidence.
     """
     patterns = []
 
-    # Bull Flag
+    # ── Bullish patterns ────────────────────────────────────────────────────
     bull_flag = detect_bull_flag(df, lookback=20)
     if bull_flag["detected"]:
         patterns.append({
@@ -595,10 +794,9 @@ def detect_patterns(df: pd.DataFrame) -> list:
             "confidence": bull_flag["confidence"],
             "bias": "Bullish",
             "description": f"Strong move up ({bull_flag['initial_gain']}%) followed by tight consolidation",
-            "action": "Buy breakout above consolidation high with volume"
+            "action": "Buy breakout above consolidation high with volume",
         })
 
-    # Cup and Handle
     cup_handle = detect_cup_and_handle(df, lookback=40)
     if cup_handle["detected"]:
         patterns.append({
@@ -606,10 +804,9 @@ def detect_patterns(df: pd.DataFrame) -> list:
             "confidence": cup_handle["confidence"],
             "bias": "Bullish",
             "description": f"U-shaped recovery ({cup_handle['cup_depth']}% depth) with handle",
-            "action": "Buy breakout above handle high"
+            "action": "Buy breakout above handle high",
         })
 
-    # Double Bottom
     double_bottom = detect_double_bottom(df, lookback=30)
     if double_bottom["detected"]:
         patterns.append({
@@ -617,10 +814,9 @@ def detect_patterns(df: pd.DataFrame) -> list:
             "confidence": double_bottom["confidence"],
             "bias": "Bullish",
             "description": f"Two lows at similar price ({double_bottom['low_similarity']}% apart)",
-            "action": "Buy breakout above middle peak" if not double_bottom["breakout"] else "Already breaking out!"
+            "action": "Buy breakout above middle peak" if not double_bottom["breakout"] else "Already breaking out!",
         })
 
-    # Ascending Triangle
     asc_triangle = detect_ascending_triangle(df, lookback=30)
     if asc_triangle["detected"]:
         patterns.append({
@@ -628,12 +824,52 @@ def detect_patterns(df: pd.DataFrame) -> list:
             "confidence": asc_triangle["confidence"],
             "bias": "Bullish",
             "description": f"Flat resistance with {asc_triangle['resistance_touches']} touches, rising support",
-            "action": "Buy breakout above resistance with volume surge"
+            "action": "Buy breakout above resistance with volume surge",
         })
 
-    # Sort by confidence
-    patterns.sort(key=lambda x: x["confidence"], reverse=True)
+    # ── Bearish patterns ────────────────────────────────────────────────────
+    bear_flag = detect_bearish_flag(df, lookback=20)
+    if bear_flag["detected"]:
+        patterns.append({
+            "type": "Bear Flag",
+            "confidence": bear_flag["confidence"],
+            "bias": "Bearish",
+            "description": f"Strong drop ({bear_flag['initial_drop']}%) followed by tight upward drift",
+            "action": "Avoid long — breakdown below consolidation low targets further downside",
+        })
 
+    double_top = detect_double_top(df, lookback=30)
+    if double_top["detected"]:
+        patterns.append({
+            "type": "Double Top",
+            "confidence": double_top["confidence"],
+            "bias": "Bearish",
+            "description": f"Two highs at similar price ({double_top['high_similarity']}% apart)",
+            "action": "Avoid long — breakdown below trough confirms reversal" if not double_top["breakdown"] else "Already breaking down!",
+        })
+
+    hs = detect_head_and_shoulders(df, lookback=40)
+    if hs["detected"]:
+        patterns.append({
+            "type": "Head & Shoulders",
+            "confidence": hs["confidence"],
+            "bias": "Bearish",
+            "description": f"Classic reversal — neckline at ${hs['neckline']}, shoulders within {hs['shoulder_similarity']}%",
+            "action": "Avoid long — break below neckline signals trend reversal" if not hs["breakdown"] else "Neckline broken — high risk!",
+        })
+
+    desc_triangle = detect_descending_triangle(df, lookback=30)
+    if desc_triangle["detected"]:
+        patterns.append({
+            "type": "Descending Triangle",
+            "confidence": desc_triangle["confidence"],
+            "bias": "Bearish",
+            "description": f"Flat support with {desc_triangle['support_touches']} touches, declining highs",
+            "action": "Avoid long — breakdown below support triggers measured move lower",
+        })
+
+    # Sort by confidence (highest first)
+    patterns.sort(key=lambda x: x["confidence"], reverse=True)
     return patterns
 
 

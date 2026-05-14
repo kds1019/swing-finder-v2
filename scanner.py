@@ -23,7 +23,8 @@ from utils.tiingo_api import (
 from utils.indicators import (
     rsi, atr, compute_indicators,
     find_support_resistance, analyze_volume, calculate_relative_strength,
-    calculate_fibonacci_levels, get_fibonacci_zone_label
+    calculate_fibonacci_levels, get_fibonacci_zone_label,
+    detect_patterns,
 )
 from utils.storage import load_json, save_json, add_stock_to_enhanced_watchlist
 from utils.fundamentals import get_tiingo_fundamentals_for_claude, calculate_fundamental_score
@@ -579,6 +580,15 @@ def scanner_ui(TIINGO_TOKEN):
             #     # Silently fail - sector data is optional
             #     pass
 
+            # --- Pattern Recognition ---
+            top_pattern = None
+            try:
+                patterns = detect_patterns(df)
+                if patterns:
+                    top_pattern = patterns[0]  # highest confidence pattern
+            except Exception:
+                pass
+
             # --- Build result card ---
             # Note: Fundamental scores are fetched on-demand after scan to keep scans fast
             card = {
@@ -615,6 +625,8 @@ def scanner_ui(TIINGO_TOKEN):
                 "DaysToEarnings": days_to_earnings,
                 "EarningsWarning": earnings_warning,
                 "Sector": sector,
+                # Pattern recognition
+                "Pattern": top_pattern,
             }
 
             # --- Debug (optional, visible in console/UI logs) ---
@@ -1373,6 +1385,17 @@ def scanner_ui(TIINGO_TOKEN):
                             if earnings_badge:
                                 card_html += f"<br/><span style='font-size:0.85rem;'>{earnings_badge}</span>"
 
+                            # Pattern badge
+                            pat = rec.get("Pattern")
+                            if pat:
+                                pat_emoji = "📈" if pat["bias"] == "Bullish" else "📉"
+                                pat_color = "#22c55e" if pat["bias"] == "Bullish" else "#ef4444"
+                                card_html += (
+                                    f"<br/><span style='font-size:0.85rem;color:{pat_color};'>"
+                                    f"{pat_emoji} {pat['type']} ({pat['confidence']}% conf)"
+                                    f"</span>"
+                                )
+
                             # Build R:R badge
                             rr_badge = ""
                             rr_color = "#16a34a"  # Green by default
@@ -1511,6 +1534,17 @@ def scanner_ui(TIINGO_TOKEN):
                                 card_html += f"<br/><span style='font-size:0.85rem;'>{sector_badge}</span>"
                             if earnings_badge:
                                 card_html += f"<br/><span style='font-size:0.85rem;'>{earnings_badge}</span>"
+
+                            # Pattern badge
+                            pat = rec.get("Pattern")
+                            if pat:
+                                pat_emoji = "📈" if pat["bias"] == "Bullish" else "📉"
+                                pat_color = "#22c55e" if pat["bias"] == "Bullish" else "#ef4444"
+                                card_html += (
+                                    f"<br/><span style='font-size:0.85rem;color:{pat_color};'>"
+                                    f"{pat_emoji} {pat['type']} ({pat['confidence']}% conf)"
+                                    f"</span>"
+                                )
 
                             card_html += f"""
                                 <div style="font-size:0.9rem;opacity:0.9;margin-top:4px;">
