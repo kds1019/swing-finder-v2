@@ -1009,7 +1009,17 @@ def analyzer_ui(TIINGO_TOKEN):
                                 for detail in score_data["details"]:
                                     st.markdown(f"- {detail}")
                     else:
-                        st.info("Tiingo fundamentals not available — requires Power Plan or higher.")
+                        err_msg = fund.get("_error", "") if fund else ""
+                        if err_msg:
+                            st.warning(f"⚠️ Tiingo fundamentals API error: {err_msg}")
+                            st.caption(
+                                "If this shows HTTP 403, your Tiingo token may not have the "
+                                "Fundamentals add-on enabled — check tiingo.com/account → "
+                                "Fundamentals Data. If it shows HTTP 401, verify the "
+                                "TIINGO_TOKEN secret in Streamlit Cloud settings."
+                            )
+                        else:
+                            st.info("Tiingo fundamentals returned no data for this ticker.")
 
                 except Exception as e:
                     st.warning(f"Could not load fundamental data: {e}")

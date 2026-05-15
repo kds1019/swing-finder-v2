@@ -89,40 +89,46 @@ def get_tiingo_fundamentals_for_claude(ticker: str, token: str) -> Dict[str, Any
       1. /tiingo/fundamentals/<ticker>/daily  → P/E, P/B, market cap, enterprise value
       2. /tiingo/fundamentals/<ticker>/statements → revenue, net income, debt, cash, ROE, etc.
 
-    Returns a clean flat dict (empty dict on any failure — never raises).
-    Requires Tiingo Power Plan or higher.
+    Returns a flat dict.  On failure, returns a dict with an '_error' key describing
+    the real reason (HTTP status, empty response, exception) so callers can surface
+    a meaningful message instead of a generic "requires Power Plan" warning.
     """
     result: Dict[str, Any] = {}
-
     headers = {"Authorization": f"Token {token}"}
 
-    # ── 1. Daily metrics (most recent available) ───────────────────────────────
+    # ── 1. Daily metrics ──────────────────────────────────────────────────────
+    daily_status = None
     try:
         start = (dt.date.today() - dt.timedelta(days=45)).isoformat()
         url = f"https://api.tiingo.com/tiingo/fundamentals/{ticker.lower()}/daily"
         r = requests.get(url, headers=headers, params={"startDate": start}, timeout=10)
+        daily_status = r.status_code
         if r.ok:
             data = r.json()
             if data and isinstance(data, list):
-                latest = data[-1]          # most recent row
+                latest = data[-1]
                 result["market_cap"]     = latest.get("marketCap")
                 result["enterprise_val"] = latest.get("enterpriseVal")
                 result["pe_ratio"]       = latest.get("peRatio")
                 result["pb_ratio"]       = latest.get("pbRatio")
                 result["trailing_peg"]   = latest.get("trailingPEG1Y")
-    except Exception:
-        pass
+            else:
+                result.setdefault("_warn_daily", "API returned empty list for daily metrics")
+    except Exception as e:
+        daily_status = f"exception: {e}"
 
     # ── 2. Latest quarterly statements ────────────────────────────────────────
+    stmt_status = None
     try:
         url = f"https://api.tiingo.com/tiingo/fundamentals/{ticker.lower()}/statements"
         r = requests.get(url, headers=headers, timeout=10)
+        stmt_status = r.status_code
         if r.ok:
             data = r.json()
             if data and isinstance(data, list):
                 quarterly = [d for d in data if d.get("quarter")]
                 if quarterly:
-                    q    = quarterly[0]          # most recent quarter
+                    q    = quarterly[0]
                     stmt = q.get("statementData", {})
 
                     income   = {item["dataCode"]: item["value"]
@@ -132,21 +138,20 @@ def get_tiingo_fundamentals_for_claude(ticker: str, token: str) -> Dict[str, Any
                     cashflow = {item["dataCode"]: item["value"]
                                 for item in stmt.get("cashFlow", [])}
 
-                    result["quarter"]       = f"Q{q.get('quarter')} {q.get('year')}"
-                    result["revenue"]       = income.get("revenue")
-                    result["gross_profit"]  = income.get("grossProfit")
-                    result["net_income"]    = income.get("netIncComStock") or income.get("netinc")
-                    result["eps"]           = income.get("epsdil") or income.get("eps")
-                    result["total_assets"]  = balance.get("totalAssets")
-                    result["total_debt"]    = balance.get("debt")
-                    result["total_equity"]  = balance.get("equity")
-                    result["cash"]          = balance.get("cashAndEq")
-                    result["current_assets"]  = balance.get("assetsCurrent")
+                    result["quarter"]             = f"Q{q.get('quarter')} {q.get('year')}"
+                    result["revenue"]             = income.get("revenue")
+                    result["gross_profit"]        = income.get("grossProfit")
+                    result["net_income"]          = income.get("netIncComStock") or income.get("netinc")
+                    result["eps"]                 = income.get("epsdil") or income.get("eps")
+                    result["total_assets"]        = balance.get("totalAssets")
+                    result["total_debt"]          = balance.get("debt")
+                    result["total_equity"]        = balance.get("equity")
+                    result["cash"]                = balance.get("cashAndEq")
+                    result["current_assets"]      = balance.get("assetsCurrent")
                     result["current_liabilities"] = balance.get("liabilitiesCurrent")
-                    result["op_cash_flow"]  = cashflow.get("ncfo")
-                    result["free_cash_flow"] = cashflow.get("freeCashFlow")
+                    result["op_cash_flow"]        = cashflow.get("ncfo")
+                    result["free_cash_flow"]      = cashflow.get("freeCashFlow")
 
-                    # ── Calculated ratios ──────────────────────────────────────
                     rev  = result.get("revenue") or 0
                     ni   = result.get("net_income") or 0
                     eq   = result.get("total_equity") or 0
@@ -161,8 +166,36 @@ def get_tiingo_fundamentals_for_claude(ticker: str, token: str) -> Dict[str, Any
                     result["gross_margin_pct"]  = (
                         round((result.get("gross_profit") or 0) / rev * 100, 1) if rev else None
                     )
-    except Exception:
-        pass
+                else:
+                    result.setdefault("_warn_stmts", "API returned data but no quarterly entries found")
+            else:
+                result.setdefault("_warn_stmts", "API returned empty list for statements")
+    except Exception as e:
+        stmt_status = f"exception: {e}"
+
+    # ── Attach diagnostic info if nothing useful came back ────────────────────
+    real_keys = {k for k in result if not k.startswith("_")}
+    if not real_keys:
+        # Build a plain-English error from the status codes we captured
+        def _status_msg(code) -> str:
+            if code is None:
+                return "no response"
+            if isinstance(code, str):
+                return code
+            if code == 401:
+                return "HTTP 401 — token rejected (check TIINGO_TOKEN secret)"
+            if code == 403:
+                return "HTTP 403 — endpoint not on your plan (check tiingo.com/account)"
+            if code == 404:
+                return f"HTTP 404 — ticker not found on Tiingo fundamentals"
+            if code == 429:
+                return "HTTP 429 — rate limited, try again in a moment"
+            return f"HTTP {code}"
+
+        result["_error"] = (
+            f"Daily metrics: {_status_msg(daily_status)} | "
+            f"Statements: {_status_msg(stmt_status)}"
+        )
 
     return result
 
