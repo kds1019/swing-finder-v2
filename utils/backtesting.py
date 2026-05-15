@@ -134,20 +134,32 @@ def backtest_strategy(
             
             # Compute indicators
             df = compute_indicators(df)
-            
+
+            # ── Duplicate-signal guard ──────────────────────────────────────
+            # Track the first bar index we're allowed to enter a NEW trade.
+            # After a trade is entered on bar i, we skip all bars up to and
+            # including the bar where that trade exits, preventing the same
+            # setup from being counted multiple times while a position is open.
+            next_entry_bar = 60  # start of the testable range
+
             # Simulate scanning each day
             for i in range(60, len(df) - hold_days):  # Need buffer for indicators and exit
+
+                # ── Skip bars where a position is still open ───────────────
+                if i < next_entry_bar:
+                    continue
+
                 row = df.iloc[i]
-                
+
                 # Check if this setup would have been flagged by scanner
                 setup_type = classify_setup(row)
-                
+
                 # Apply setup mode filter
                 if setup_mode == "Pullback" and setup_type != "Pullback":
                     continue
                 elif setup_mode == "Breakout" and setup_type != "Breakout":
                     continue
-                
+
                 # Apply scanner filters
                 if not passes_filters(row, sensitivity, setup_type, price_min, price_max, min_volume):
                     continue
@@ -176,49 +188,56 @@ def backtest_strategy(
                 entry_price = float(row["Close"])
                 entry_date = row["Date"]
                 atr = float(row["ATR14"])
-                
+
                 # Calculate stop and target
                 stop_price = entry_price - (stop_loss_atr_mult * atr)
                 risk = entry_price - stop_price
                 target_price = entry_price + (take_profit_r_mult * risk)
-                
+
                 # Simulate holding for N days or until stop/target hit
                 exit_price = None
                 exit_date = None
                 exit_reason = "Time"
-                
+                exit_bar = i + hold_days  # default: time exit bar index
+
                 for j in range(i + 1, min(i + 1 + hold_days, len(df))):
                     future_row = df.iloc[j]
                     low = float(future_row["Low"])
                     high = float(future_row["High"])
-                    close = float(future_row["Close"])
-                    
+
                     # Check stop loss
                     if low <= stop_price:
                         exit_price = stop_price
                         exit_date = future_row["Date"]
                         exit_reason = "Stop Loss"
+                        exit_bar = j
                         break
-                    
+
                     # Check take profit
                     if high >= target_price:
                         exit_price = target_price
                         exit_date = future_row["Date"]
                         exit_reason = "Take Profit"
+                        exit_bar = j
                         break
-                
+
                 # If no stop/target hit, exit at close after hold_days
                 if exit_price is None:
-                    exit_row = df.iloc[min(i + hold_days, len(df) - 1)]
+                    exit_idx = min(i + hold_days, len(df) - 1)
+                    exit_row = df.iloc[exit_idx]
                     exit_price = float(exit_row["Close"])
                     exit_date = exit_row["Date"]
                     exit_reason = "Time Exit"
-                
+                    exit_bar = exit_idx
+
+                # ── Advance the guard: no new entry until this trade closes ─
+                next_entry_bar = exit_bar + 1
+
                 # Calculate trade result
                 pnl = exit_price - entry_price
                 pnl_pct = (pnl / entry_price) * 100
                 r_multiple = pnl / risk if risk > 0 else 0
-                
+
                 trade = {
                     "ticker": ticker,
                     "setup_type": setup_type,
@@ -237,7 +256,7 @@ def backtest_strategy(
                     "pattern": detected_pattern,
                     "pattern_confidence": detected_pattern_conf,
                 }
-                
+
                 all_trades.append(trade)
                 
         except Exception as e:
