@@ -903,18 +903,21 @@ def scanner_ui(TIINGO_TOKEN):
                 try:
                     fund = get_tiingo_fundamentals_for_claude(ticker, TIINGO_TOKEN)
 
-                    if fund:
+                    real_keys = {k for k in (fund or {}) if not k.startswith("_")}
+                    if fund and real_keys:
                         score_data = calculate_fundamental_score(fund)
-
+                        source = fund.get("_source", "")
                         if score_data and score_data.get("score", 0) > 0:
                             rec["FundScore"] = score_data.get("score", 0)
                             rec["FundGrade"] = score_data.get("grade", "N/A")
                             success_count += 1
-                            debug_log.append(("💎", f"{ticker}: Fund Score {rec['FundScore']} ({rec['FundGrade']})"))
+                            debug_log.append(("💎", f"{ticker}: Fund Score {rec['FundScore']} ({rec['FundGrade']}) [{source}]"))
                         else:
-                            debug_log.append(("⚠️", f"{ticker}: Score calculated as 0"))
+                            debug_log.append(("⚠️", f"{ticker}: Score calculated as 0 [{source}]"))
+                    elif fund and fund.get("_error"):
+                        debug_log.append(("⚠️", f"{ticker}: Fundamentals error — {fund['_error'][:60]}"))
                     else:
-                        debug_log.append(("⚠️", f"{ticker}: No Tiingo fundamental data (requires Power Plan+)"))
+                        debug_log.append(("⚠️", f"{ticker}: No fundamental data available"))
 
                 except Exception as e:
                     debug_log.append(("⚠️", f"{ticker}: Error - {str(e)[:50]}"))

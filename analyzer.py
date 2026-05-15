@@ -959,10 +959,17 @@ def analyzer_ui(TIINGO_TOKEN):
                                 f"<p style='margin:0;'>Grade: {grade}</p></div>",
                                 unsafe_allow_html=True
                             )
-                            st.caption(f"*{fund.get('quarter', 'Latest quarter')}*")
+                            source = fund.get("_source", "")
+                            quarter = fund.get("quarter", "")
+                            caption = f"*{quarter}*" if quarter else ""
+                            if source:
+                                caption += f"  ·  via {source}"
+                            if caption:
+                                st.caption(caption)
 
                         with col_fund2:
-                            st.markdown("**Key Metrics (Tiingo)**")
+                            source_label = fund.get("_source", "Tiingo")
+                            st.markdown(f"**Key Metrics ({source_label})**")
                             mktcap = fund.get("market_cap")
                             if mktcap:
                                 st.markdown(f"- Market Cap: **{format_large_number(mktcap)}**")
@@ -1011,14 +1018,8 @@ def analyzer_ui(TIINGO_TOKEN):
                                 for detail in score_data["details"]:
                                     st.markdown(f"- {detail}")
                     else:
-                        if fund and fund.get("_not_dow30"):
-                            st.info(
-                                "📊 Fundamental data is only available for DOW 30 stocks "
-                                "on the current Tiingo plan (AAPL, MSFT, JPM, etc.). "
-                                "Contact support@tiingo.com to unlock all tickers."
-                            )
-                        elif fund and fund.get("_error"):
-                            st.warning(f"⚠️ Tiingo fundamentals error: {fund['_error']}")
+                        if fund and fund.get("_error"):
+                            st.warning(f"⚠️ Fundamentals unavailable: {fund['_error']}")
                         else:
                             st.info("No fundamental data returned for this ticker.")
 
