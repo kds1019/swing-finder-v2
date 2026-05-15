@@ -80,7 +80,7 @@ def get_daily_metrics(ticker: str, token: str) -> Optional[pd.DataFrame]:
         return None
 
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)  # 5 min during debugging; restore to 86400 once working
 def get_tiingo_fundamentals_for_claude(ticker: str, token: str) -> Dict[str, Any]:
     """
     Fetch combined Tiingo fundamentals suitable for passing to Claude prompts.
@@ -99,11 +99,14 @@ def get_tiingo_fundamentals_for_claude(ticker: str, token: str) -> Dict[str, Any
 
     # ── 1. Daily metrics ──────────────────────────────────────────────────────
     daily_status = None
+    daily_body = ""
     try:
         start = (dt.date.today() - dt.timedelta(days=45)).isoformat()
         url = f"https://api.tiingo.com/tiingo/fundamentals/{ticker.upper()}/daily"
         r = requests.get(url, headers=headers, params={"startDate": start, "token": token}, timeout=10)
         daily_status = r.status_code
+        if not r.ok:
+            daily_body = r.text[:200]  # Capture the error body
         if r.ok:
             data = r.json()
             if data and isinstance(data, list):
@@ -120,10 +123,13 @@ def get_tiingo_fundamentals_for_claude(ticker: str, token: str) -> Dict[str, Any
 
     # ── 2. Latest quarterly statements ────────────────────────────────────────
     stmt_status = None
+    stmt_body = ""
     try:
         url = f"https://api.tiingo.com/tiingo/fundamentals/{ticker.upper()}/statements"
         r = requests.get(url, headers=headers, params={"token": token}, timeout=10)
         stmt_status = r.status_code
+        if not r.ok:
+            stmt_body = r.text[:200]  # Capture the error body
         if r.ok:
             data = r.json()
             if data and isinstance(data, list):
@@ -177,25 +183,25 @@ def get_tiingo_fundamentals_for_claude(ticker: str, token: str) -> Dict[str, Any
     # ── Attach diagnostic info if nothing useful came back ────────────────────
     real_keys = {k for k in result if not k.startswith("_")}
     if not real_keys:
-        # Build a plain-English error from the status codes we captured
-        def _status_msg(code) -> str:
+        def _status_msg(code, body="") -> str:
             if code is None:
                 return "no response"
             if isinstance(code, str):
                 return code
+            body_hint = f" → {body.strip()}" if body and body.strip() else ""
             if code == 401:
-                return "HTTP 401 — token rejected (check TIINGO_TOKEN secret)"
+                return f"HTTP 401 — token rejected{body_hint}"
             if code == 403:
-                return "HTTP 403 — endpoint not on your plan (check tiingo.com/account)"
+                return f"HTTP 403 — plan permission denied{body_hint}"
             if code == 404:
-                return f"HTTP 404 — ticker not found on Tiingo fundamentals"
+                return f"HTTP 404 — ticker not found{body_hint}"
             if code == 429:
-                return "HTTP 429 — rate limited, try again in a moment"
-            return f"HTTP {code}"
+                return f"HTTP 429 — rate limited{body_hint}"
+            return f"HTTP {code}{body_hint}"
 
         result["_error"] = (
-            f"Daily metrics: {_status_msg(daily_status)} | "
-            f"Statements: {_status_msg(stmt_status)}"
+            f"Daily: {_status_msg(daily_status, daily_body)} | "
+            f"Statements: {_status_msg(stmt_status, stmt_body)}"
         )
 
     return result
