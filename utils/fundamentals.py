@@ -22,10 +22,10 @@ def get_fundamentals(ticker: str, token: str) -> Optional[Dict[str, Any]]:
     """
     try:
         # Get latest statements (quarterly and annual)
-        url = f"https://api.tiingo.com/tiingo/fundamentals/{ticker.lower()}/statements"
-        headers = {"Authorization": f"Token {token}"}
-        
-        response = requests.get(url, headers=headers, timeout=10)
+        url = f"https://api.tiingo.com/tiingo/fundamentals/{ticker.upper()}/statements"
+        headers = {"Authorization": f"Token {token}", "Content-Type": "application/json"}
+
+        response = requests.get(url, headers=headers, params={"token": token}, timeout=10)
         
         if response.status_code != 200:
             return None
@@ -59,10 +59,10 @@ def get_daily_metrics(ticker: str, token: str) -> Optional[pd.DataFrame]:
     Fetch daily fundamental metrics (P/E, P/B, market cap, etc.)
     """
     try:
-        url = f"https://api.tiingo.com/tiingo/fundamentals/{ticker.lower()}/daily"
-        headers = {"Authorization": f"Token {token}"}
-        params = {"startDate": "2020-01-01"}  # Get last 5 years
-        
+        url = f"https://api.tiingo.com/tiingo/fundamentals/{ticker.upper()}/daily"
+        headers = {"Authorization": f"Token {token}", "Content-Type": "application/json"}
+        params = {"startDate": "2020-01-01", "token": token}
+
         response = requests.get(url, headers=headers, params=params, timeout=10)
         
         if response.status_code != 200:
@@ -94,14 +94,15 @@ def get_tiingo_fundamentals_for_claude(ticker: str, token: str) -> Dict[str, Any
     a meaningful message instead of a generic "requires Power Plan" warning.
     """
     result: Dict[str, Any] = {}
-    headers = {"Authorization": f"Token {token}"}
+    # Tiingo fundamentals endpoints require the token as a query param, not just a header
+    headers = {"Authorization": f"Token {token}", "Content-Type": "application/json"}
 
     # ── 1. Daily metrics ──────────────────────────────────────────────────────
     daily_status = None
     try:
         start = (dt.date.today() - dt.timedelta(days=45)).isoformat()
-        url = f"https://api.tiingo.com/tiingo/fundamentals/{ticker.lower()}/daily"
-        r = requests.get(url, headers=headers, params={"startDate": start}, timeout=10)
+        url = f"https://api.tiingo.com/tiingo/fundamentals/{ticker.upper()}/daily"
+        r = requests.get(url, headers=headers, params={"startDate": start, "token": token}, timeout=10)
         daily_status = r.status_code
         if r.ok:
             data = r.json()
@@ -120,8 +121,8 @@ def get_tiingo_fundamentals_for_claude(ticker: str, token: str) -> Dict[str, Any
     # ── 2. Latest quarterly statements ────────────────────────────────────────
     stmt_status = None
     try:
-        url = f"https://api.tiingo.com/tiingo/fundamentals/{ticker.lower()}/statements"
-        r = requests.get(url, headers=headers, timeout=10)
+        url = f"https://api.tiingo.com/tiingo/fundamentals/{ticker.upper()}/statements"
+        r = requests.get(url, headers=headers, params={"token": token}, timeout=10)
         stmt_status = r.status_code
         if r.ok:
             data = r.json()
