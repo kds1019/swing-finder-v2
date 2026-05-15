@@ -80,7 +80,16 @@ def get_daily_metrics(ticker: str, token: str) -> Optional[pd.DataFrame]:
         return None
 
 
-@st.cache_data(ttl=300, show_spinner=False)  # 5 min during debugging; restore to 86400 once working
+# Tiingo Power Plan fundamentals are restricted to these 30 tickers.
+# Full access requires contacting support@tiingo.com.
+TIINGO_FUNDAMENTALS_TICKERS = {
+    "AAPL", "AMGN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS", "DOW",
+    "GS", "HD", "HON", "IBM", "INTC", "JNJ", "JPM", "KO", "MCD", "MMM",
+    "MRK", "MSFT", "NKE", "PG", "TRV", "UNH", "V", "VZ", "WBA", "WMT",
+}
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
 def get_tiingo_fundamentals_for_claude(ticker: str, token: str) -> Dict[str, Any]:
     """
     Fetch combined Tiingo fundamentals suitable for passing to Claude prompts.
@@ -93,6 +102,10 @@ def get_tiingo_fundamentals_for_claude(ticker: str, token: str) -> Dict[str, Any
     the real reason (HTTP status, empty response, exception) so callers can surface
     a meaningful message instead of a generic "requires Power Plan" warning.
     """
+    # Only DOW 30 tickers are available on the Power Plan
+    if ticker.upper() not in TIINGO_FUNDAMENTALS_TICKERS:
+        return {"_not_dow30": True}
+
     result: Dict[str, Any] = {}
     # Tiingo fundamentals endpoints require the token as a query param, not just a header
     headers = {"Authorization": f"Token {token}", "Content-Type": "application/json"}
