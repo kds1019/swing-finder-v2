@@ -89,7 +89,24 @@ def show_backtest_page(token: str):
         )
         
         st.divider()
-        
+
+        # Pattern filter
+        st.subheader("Pattern Filter")
+        PATTERN_OPTIONS = [
+            "Any",
+            "Bull Flag", "Cup and Handle", "Double Bottom", "Ascending Triangle",
+            "Bear Flag", "Double Top", "Head & Shoulders", "Descending Triangle",
+        ]
+        pattern_filter = st.selectbox(
+            "Only trade when pattern is detected",
+            PATTERN_OPTIONS,
+            index=0,
+            help="'Any' = no pattern requirement. Selecting a pattern only keeps "
+                 "trades where that specific pattern was detected at entry."
+        )
+
+        st.divider()
+
         # Trade management settings
         st.subheader("Trade Management")
         
@@ -137,7 +154,8 @@ def show_backtest_page(token: str):
                 min_volume=min_volume,
                 hold_days=hold_days,
                 stop_loss_atr_mult=stop_loss_mult,
-                take_profit_r_mult=take_profit_mult
+                take_profit_r_mult=take_profit_mult,
+                pattern_filter=pattern_filter,
             )
             
             st.session_state["backtest_results"] = results
@@ -157,7 +175,7 @@ def show_backtest_page(token: str):
         st.stop()
     
     # Display results in tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "📈 Performance", "📋 All Trades", "⚙️ Settings"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Overview", "📈 Performance", "📋 All Trades", "📐 Patterns", "⚙️ Settings"])
 
     with tab1:
         show_overview_tab(results)
@@ -169,6 +187,9 @@ def show_backtest_page(token: str):
         show_trades_tab(results)
 
     with tab4:
+        show_patterns_tab(results)
+
+    with tab5:
         show_settings_tab(results, setup_mode, sensitivity, lookback_days)
 
 
@@ -406,11 +427,12 @@ def show_trades_tab(results: dict):
         return
 
     # Format for display
-    display_df = all_trades[[
-        "ticker", "setup_type", "entry_date", "entry_price",
-        "exit_date", "exit_price", "pnl_pct", "r_multiple",
-        "exit_reason", "hold_days"
-    ]].copy()
+    cols = ["ticker", "setup_type", "pattern", "entry_date", "entry_price",
+            "exit_date", "exit_price", "pnl_pct", "r_multiple",
+            "exit_reason", "hold_days"]
+    # Gracefully handle older results that don't have pattern column
+    cols = [c for c in cols if c in all_trades.columns]
+    display_df = all_trades[cols].copy()
 
     display_df["entry_date"] = pd.to_datetime(display_df["entry_date"]).dt.strftime("%Y-%m-%d")
     display_df["exit_date"] = pd.to_datetime(display_df["exit_date"]).dt.strftime("%Y-%m-%d")
@@ -419,11 +441,14 @@ def show_trades_tab(results: dict):
     display_df["pnl_pct"] = display_df["pnl_pct"].apply(lambda x: f"{x:+.2f}%")
     display_df["r_multiple"] = display_df["r_multiple"].apply(lambda x: f"{x:.2f}R")
 
-    display_df.columns = [
-        "Ticker", "Setup", "Entry Date", "Entry Price",
-        "Exit Date", "Exit Price", "Return", "R-Multiple",
-        "Exit Reason", "Hold Days"
-    ]
+    col_labels = {
+        "ticker": "Ticker", "setup_type": "Setup", "pattern": "Pattern",
+        "entry_date": "Entry Date", "entry_price": "Entry Price",
+        "exit_date": "Exit Date", "exit_price": "Exit Price",
+        "pnl_pct": "Return", "r_multiple": "R-Multiple",
+        "exit_reason": "Exit Reason", "hold_days": "Hold Days",
+    }
+    display_df.columns = [col_labels.get(c, c) for c in cols]
 
     # Add filters
     col1, col2, col3 = st.columns(3)
@@ -471,6 +496,93 @@ def show_trades_tab(results: dict):
         file_name="backtest_trades.csv",
         mime="text/csv"
     )
+
+
+def show_patterns_tab(results: dict):
+    """Display per-pattern performance statistics."""
+    st.subheader("📐 Pattern Performance")
+    st.caption(
+        "Shows historical win rate, average return, and R-multiple broken down by "
+        "which chart pattern was detected at the time of entry. "
+        "Run with Pattern Filter = 'Any' to see all patterns at once."
+    )
+
+    pattern_stats = results.get("pattern_stats", [])
+    all_trades = pd.DataFrame(results.get("all_trades", []))
+
+    if not pattern_stats:
+        st.info("No pattern data found. Re-run the backtest — pattern detection is now active on all scanner hits.")
+        return
+
+    # ── Summary table ───────────────────────────────────────────────────
+    stats_df = pd.DataFrame(pattern_stats)
+    stats_df.columns = ["Pattern", "Trades", "Win Rate %", "Avg Return %", "Avg R", "Profit Factor", "Avg Conf %"]
+
+    st.dataframe(
+        stats_df.style
+            .background_gradient(subset=["Win Rate %"], cmap="RdYlGn", vmin=30, vmax=75)
+            .background_gradient(subset=["Avg Return %"], cmap="RdYlGn", vmin=-3, vmax=5)
+            .format({
+                "Win Rate %": "{:.1f}%",
+                "Avg Return %": "{:+.2f}%",
+                "Avg R": "{:.2f}R",
+                "Profit Factor": lambda x: f"{x:.2f}" if x != float("inf") else "∞",
+                "Avg Conf %": "{:.0f}%",
+            }),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.divider()
+
+    # ── Bar chart: win rate by pattern ──────────────────────────────────
+    fig_wr = go.Figure(go.Bar(
+        x=stats_df["Pattern"],
+        y=stats_df["Win Rate %"],
+        marker_color=[
+            "#22c55e" if w >= 55 else "#f59e0b" if w >= 45 else "#ef4444"
+            for w in stats_df["Win Rate %"]
+        ],
+        text=stats_df["Win Rate %"].apply(lambda x: f"{x:.1f}%"),
+        textposition="outside",
+    ))
+    fig_wr.add_hline(y=50, line_dash="dash", line_color="gray", opacity=0.6,
+                     annotation_text="50% baseline", annotation_position="right")
+    fig_wr.update_layout(
+        title="Win Rate by Pattern",
+        yaxis_title="Win Rate (%)", xaxis_title="",
+        height=350, showlegend=False,
+    )
+    st.plotly_chart(fig_wr, use_container_width=True)
+
+    # ── Bar chart: avg return by pattern ────────────────────────────────
+    fig_ret = go.Figure(go.Bar(
+        x=stats_df["Pattern"],
+        y=stats_df["Avg Return %"],
+        marker_color=[
+            "#22c55e" if r > 0 else "#ef4444"
+            for r in stats_df["Avg Return %"]
+        ],
+        text=stats_df["Avg Return %"].apply(lambda x: f"{x:+.2f}%"),
+        textposition="outside",
+    ))
+    fig_ret.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.6)
+    fig_ret.update_layout(
+        title="Average Return by Pattern",
+        yaxis_title="Avg Return (%)", xaxis_title="",
+        height=350, showlegend=False,
+    )
+    st.plotly_chart(fig_ret, use_container_width=True)
+
+    # ── Trades without a detected pattern ───────────────────────────────
+    if "pattern" in all_trades.columns:
+        no_pattern_count = len(all_trades[all_trades["pattern"] == "None"])
+        total = len(all_trades)
+        pct = (no_pattern_count / total * 100) if total > 0 else 0
+        st.info(
+            f"**{no_pattern_count} of {total} trades ({pct:.0f}%)** had no pattern detected at entry. "
+            f"These are pure EMA/RSI setups without a chart formation."
+        )
 
 
 def show_settings_tab(results: dict, setup_mode: str, sensitivity: int, lookback_days: int):

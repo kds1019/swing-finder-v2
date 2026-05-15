@@ -9,13 +9,15 @@ import streamlit as st
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 from utils.tiingo_api import tiingo_history
-from utils.indicators import compute_indicators
+from utils.indicators import compute_indicators, detect_patterns
 
 
 def classify_setup(last: pd.Series) -> str:
     """
     Classify setup type based on EMA and RSI.
-    Matches logic from scanner.py.
+    Thresholds unified with scanner.py and analyzer.py:
+      Breakout: EMA20 > EMA50 AND RSI >= 55
+      Pullback: EMA20 > EMA50 AND 35 <= RSI < 55
     """
     try:
         ema20 = float(last["EMA20"])
@@ -26,11 +28,9 @@ def classify_setup(last: pd.Series) -> str:
 
     ema_up = ema20 > ema50
 
-    if ema_up and rsi >= 50:
+    if ema_up and rsi >= 55:
         return "Breakout"
-    elif ema_up and rsi < 50:
-        return "Pullback"
-    elif not ema_up and rsi < 60:
+    elif ema_up and 35 <= rsi < 55:
         return "Pullback"
     else:
         return "Neutral"
@@ -97,7 +97,8 @@ def backtest_strategy(
     min_volume: int = 500000,
     hold_days: int = 5,
     stop_loss_atr_mult: float = 1.5,
-    take_profit_r_mult: float = 2.0
+    take_profit_r_mult: float = 2.0,
+    pattern_filter: str = "Any",
 ) -> Dict[str, Any]:
     """
     Backtest scanner strategy on historical data.
@@ -150,7 +151,27 @@ def backtest_strategy(
                 # Apply scanner filters
                 if not passes_filters(row, sensitivity, setup_type, price_min, price_max, min_volume):
                     continue
-                
+
+                # ── Pattern Detection ───────────────────────────────────────
+                # Only runs on bars that already pass scanner filters (fast).
+                # Uses up to 60 bars of history ending at bar i to match the
+                # same lookback windows used by detect_patterns() in production.
+                detected_pattern = "None"
+                try:
+                    pattern_slice = df.iloc[max(0, i - 59): i + 1]
+                    patterns = detect_patterns(pattern_slice)
+                    if patterns:
+                        detected_pattern = patterns[0]["name"]
+                        detected_pattern_conf = patterns[0]["confidence"]
+                    else:
+                        detected_pattern_conf = 0
+                except Exception:
+                    detected_pattern_conf = 0
+
+                # Apply pattern filter — skip if we need a specific pattern
+                if pattern_filter != "Any" and detected_pattern != pattern_filter:
+                    continue
+
                 # This would have been a scanner hit! Simulate the trade
                 entry_price = float(row["Close"])
                 entry_date = row["Date"]
@@ -212,7 +233,9 @@ def backtest_strategy(
                     "hold_days": (pd.to_datetime(exit_date) - pd.to_datetime(entry_date)).days,
                     "stop_price": stop_price,
                     "target_price": target_price,
-                    "atr": atr
+                    "atr": atr,
+                    "pattern": detected_pattern,
+                    "pattern_confidence": detected_pattern_conf,
                 }
                 
                 all_trades.append(trade)
@@ -280,6 +303,27 @@ def backtest_strategy(
     max_win_streak = win_streaks.max() if len(win_streaks) > 0 else 0
     max_loss_streak = loss_streaks.max() if len(loss_streaks) > 0 else 0
 
+    # Pattern performance stats
+    pattern_stats = []
+    if "pattern" in trades_df.columns:
+        with_pattern = trades_df[trades_df["pattern"] != "None"]
+        if len(with_pattern) > 0:
+            for pat, grp in with_pattern.groupby("pattern"):
+                grp_wins = grp[grp["pnl"] > 0]
+                grp_losses = grp[grp["pnl"] <= 0]
+                gp = grp_wins["pnl"].sum()
+                gl = abs(grp_losses["pnl"].sum())
+                pattern_stats.append({
+                    "pattern": pat,
+                    "trades": len(grp),
+                    "win_rate": round((len(grp_wins) / len(grp)) * 100, 1),
+                    "avg_return": round(grp["pnl_pct"].mean(), 2),
+                    "avg_r": round(grp["r_multiple"].mean(), 2),
+                    "profit_factor": round(gp / gl, 2) if gl > 0 else float("inf"),
+                    "avg_confidence": round(grp["pattern_confidence"].mean(), 1),
+                })
+            pattern_stats.sort(key=lambda x: -x["win_rate"])
+
     return {
         "total_trades": len(trades_df),
         "win_rate": win_rate,
@@ -302,6 +346,7 @@ def backtest_strategy(
         "max_loss_streak": int(max_loss_streak),
         "all_trades": trades_df.to_dict("records"),
         "failed_tickers": failed_tickers,
-        "tested_tickers": len(tickers) - len(failed_tickers)
+        "tested_tickers": len(tickers) - len(failed_tickers),
+        "pattern_stats": pattern_stats,
     }
 
