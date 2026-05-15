@@ -24,7 +24,7 @@ from utils.indicators import (
     rsi, atr, compute_indicators,
     find_support_resistance, analyze_volume, calculate_relative_strength,
     calculate_fibonacci_levels, get_fibonacci_zone_label,
-    detect_patterns,
+    detect_patterns, find_pivot_points,
 )
 from utils.storage import load_json, save_json, add_stock_to_enhanced_watchlist
 from utils.fundamentals import get_tiingo_fundamentals_for_claude, calculate_fundamental_score
@@ -489,6 +489,68 @@ def scanner_ui(TIINGO_TOKEN):
 
             smart_score = int(np.clip(smart_score, 0, 100))
 
+            # --- Structural Context: Base detection + Meaningful Level ---
+            # Base detection: was there tight consolidation in the 15–3 bars before now?
+            has_base = False
+            base_tightness = None
+            if len(df) >= 15:
+                try:
+                    pre_move = df.iloc[-15:-3]  # the "pre-breakout" period
+                    base_high = float(pre_move["High"].max())
+                    base_low  = float(pre_move["Low"].min())
+                    base_mid  = float(pre_move["Close"].mean())
+                    if base_mid > 0:
+                        base_range = (base_high - base_low) / base_mid
+                        if base_range < 0.07:          # ≤ 7% range → tight base
+                            has_base = True
+                            base_tightness = round(base_range * 100, 1)
+                            if setup == "Breakout":
+                                smart_score += 12      # breakout FROM a real base
+                except Exception:
+                    pass
+
+            # Meaningful level check: for Pullback, is price at EMA20/50 or pivot low?
+            at_meaningful_level = False
+            level_description   = None
+            if setup == "Pullback" or near_miss:
+                try:
+                    ema20_dist = abs(px - ema20) / px if px > 0 else 1
+                    ema50_dist = abs(px - ema50) / px if px > 0 else 1
+
+                    # Check nearest pivot low (structural support)
+                    piv = find_pivot_points(df.tail(30), left_bars=3, right_bars=3)
+                    piv_lows = piv["pivot_lows"]
+                    near_pivot_low  = False
+                    nearest_pl_price = None
+                    if piv_lows:
+                        nearest_pl = min(piv_lows, key=lambda p: abs(p["price"] - px))
+                        pivot_dist = abs(nearest_pl["price"] - px) / px
+                        near_pivot_low   = pivot_dist <= 0.025   # within 2.5%
+                        nearest_pl_price = nearest_pl["price"]
+
+                    if ema20_dist <= 0.02:
+                        at_meaningful_level = True
+                        level_description   = f"near EMA20 (${ema20:.2f})"
+                        smart_score += 10
+                    elif ema50_dist <= 0.02:
+                        at_meaningful_level = True
+                        level_description   = f"near EMA50 (${ema50:.2f})"
+                        smart_score += 8
+                    elif near_pivot_low and nearest_pl_price:
+                        at_meaningful_level = True
+                        level_description   = f"near pivot low (${nearest_pl_price:.2f})"
+                        smart_score += 8
+                except Exception:
+                    pass
+
+            # Incorporate structural flags into the SetupContext label
+            if setup == "Breakout" and has_base:
+                setup_context = setup_context + " (from base)"
+            if setup == "Pullback" and at_meaningful_level and level_description:
+                setup_context = setup_context + f" at {level_description}"
+
+            smart_score = int(np.clip(smart_score, 0, 100))
+
             # --- Volume Analysis ---
             vol_analysis = analyze_volume(df, lookback=20)
 
@@ -627,6 +689,11 @@ def scanner_ui(TIINGO_TOKEN):
                 "Sector": sector,
                 # Pattern recognition
                 "Pattern": top_pattern,
+                # Structural context
+                "HasBase": has_base,
+                "BaseTightness": base_tightness,
+                "AtMeaningfulLevel": at_meaningful_level,
+                "LevelDescription": level_description,
             }
 
             # --- Debug (optional, visible in console/UI logs) ---

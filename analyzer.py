@@ -16,6 +16,10 @@ from news_feed import show_news_widget
 from utils.yahoo_fundamentals import (
     get_yahoo_fundamentals, calculate_yahoo_fundamental_score
 )
+from utils.fundamentals import (
+    get_fundamentals, get_tiingo_fundamentals_for_claude,
+    calculate_fundamental_score, extract_key_metrics, format_large_number
+)
 from utils.relative_strength import (
     get_multi_timeframe_strength, analyze_strength_trend,
     calculate_relative_strength_rank
@@ -929,18 +933,17 @@ def analyzer_ui(TIINGO_TOKEN):
 
         # ===================== TAB 2: FUNDAMENTALS =====================
         with tab2:
-            # ===================== Fundamental Analysis =====================
+            # ===================== Fundamental Analysis (Tiingo) =====================
             with st.expander("📊 Fundamental Analysis", expanded=False):
-                st.caption("Company financial health and profitability metrics")
+                st.caption("Company financial health from Tiingo (quarterly statements + daily metrics)")
 
                 try:
-                    fundamentals = get_yahoo_fundamentals(symbol)
+                    fund = get_tiingo_fundamentals_for_claude(symbol, TIINGO_TOKEN)
+                    stmt = get_fundamentals(symbol, TIINGO_TOKEN)
 
-                    if fundamentals:
-                        # Calculate score
-                        score_data = calculate_yahoo_fundamental_score(fundamentals)
-
-                        # Display score
+                    if fund:
+                        # Quality score from quarterly statements
+                        score_data = calculate_fundamental_score(stmt) if stmt else {"score": 0, "grade": "N/A", "details": []}
                         score = score_data.get("score", 0)
                         grade = score_data.get("grade", "N/A")
                         score_color = "green" if score >= 70 else "orange" if score >= 50 else "red"
@@ -954,50 +957,59 @@ def analyzer_ui(TIINGO_TOKEN):
                                 f"<p style='margin:0;'>Grade: {grade}</p></div>",
                                 unsafe_allow_html=True
                             )
+                            st.caption(f"*{fund.get('quarter', 'Latest quarter')}*")
 
                         with col_fund2:
-                            st.markdown("**Key Metrics (Yahoo Finance)**")
-                            # Display available Yahoo metrics
-                            if "profitMargins" in fundamentals:
-                                st.markdown(f"- Profit Margin: **{fundamentals['profitMargins']*100:.1f}%**")
-                            if "returnOnEquity" in fundamentals:
-                                st.markdown(f"- ROE: **{fundamentals['returnOnEquity']*100:.1f}%**")
-                            if "debtToEquity" in fundamentals:
-                                st.markdown(f"- Debt/Equity: **{fundamentals['debtToEquity']:.2f}**")
-                            if "currentRatio" in fundamentals:
-                                st.markdown(f"- Current Ratio: **{fundamentals['currentRatio']:.2f}**")
+                            st.markdown("**Key Metrics (Tiingo)**")
+                            mktcap = fund.get("market_cap")
+                            if mktcap:
+                                st.markdown(f"- Market Cap: **{format_large_number(mktcap)}**")
+                            if fund.get("pe_ratio") is not None:
+                                st.markdown(f"- P/E Ratio: **{fund['pe_ratio']:.1f}**")
+                            if fund.get("pb_ratio") is not None:
+                                st.markdown(f"- P/B Ratio: **{fund['pb_ratio']:.2f}**")
+                            if fund.get("profit_margin_pct") is not None:
+                                st.markdown(f"- Net Margin: **{fund['profit_margin_pct']:.1f}%**")
+                            if fund.get("gross_margin_pct") is not None:
+                                st.markdown(f"- Gross Margin: **{fund['gross_margin_pct']:.1f}%**")
+                            if fund.get("roe_pct") is not None:
+                                st.markdown(f"- ROE: **{fund['roe_pct']:.1f}%**")
+                            if fund.get("debt_to_equity") is not None:
+                                st.markdown(f"- Debt/Equity: **{fund['debt_to_equity']:.2f}**")
+                            if fund.get("current_ratio") is not None:
+                                st.markdown(f"- Current Ratio: **{fund['current_ratio']:.2f}**")
 
-                        # Detailed breakdown in expander
-                        with st.expander("📋 Detailed Fundamental Breakdown"):
-                            st.markdown("**Company Info**")
-                            if "longBusinessSummary" in fundamentals:
-                                st.caption(fundamentals["longBusinessSummary"][:300] + "...")
+                        with st.expander("📋 Detailed Breakdown"):
+                            col_d1, col_d2 = st.columns(2)
+                            with col_d1:
+                                st.markdown("**Income Statement**")
+                                if fund.get("revenue"):
+                                    st.markdown(f"- Revenue: {format_large_number(fund['revenue'])}")
+                                if fund.get("gross_profit"):
+                                    st.markdown(f"- Gross Profit: {format_large_number(fund['gross_profit'])}")
+                                if fund.get("net_income"):
+                                    st.markdown(f"- Net Income: {format_large_number(fund['net_income'])}")
+                                if fund.get("eps") is not None:
+                                    st.markdown(f"- EPS (diluted): **${fund['eps']:.2f}**")
+                            with col_d2:
+                                st.markdown("**Balance Sheet & Cash Flow**")
+                                if fund.get("cash"):
+                                    st.markdown(f"- Cash: {format_large_number(fund['cash'])}")
+                                if fund.get("total_debt"):
+                                    st.markdown(f"- Total Debt: {format_large_number(fund['total_debt'])}")
+                                if fund.get("total_equity"):
+                                    st.markdown(f"- Total Equity: {format_large_number(fund['total_equity'])}")
+                                if fund.get("op_cash_flow"):
+                                    st.markdown(f"- Op Cash Flow: {format_large_number(fund['op_cash_flow'])}")
+                                if fund.get("free_cash_flow"):
+                                    st.markdown(f"- Free Cash Flow: {format_large_number(fund['free_cash_flow'])}")
 
-                            st.markdown("**Financial Metrics**")
-                            col_detail1, col_detail2 = st.columns(2)
-
-                            with col_detail1:
-                                if "marketCap" in fundamentals:
-                                    st.markdown(f"- Market Cap: ${fundamentals['marketCap']/1e9:.2f}B")
-                                if "trailingPE" in fundamentals:
-                                    st.markdown(f"- P/E Ratio: {fundamentals['trailingPE']:.2f}")
-                                if "priceToBook" in fundamentals:
-                                    st.markdown(f"- P/B Ratio: {fundamentals['priceToBook']:.2f}")
-
-                            with col_detail2:
-                                if "beta" in fundamentals:
-                                    st.markdown(f"- Beta: {fundamentals['beta']:.2f}")
-                                if "dividendYield" in fundamentals and fundamentals['dividendYield']:
-                                    st.markdown(f"- Dividend Yield: {fundamentals['dividendYield']*100:.2f}%")
-                                if "52WeekChange" in fundamentals:
-                                    st.markdown(f"- 52W Change: {fundamentals['52WeekChange']*100:.1f}%")
-
-                            if "details" in score_data:
-                                st.markdown("### Quality Score Breakdown")
+                            if score_data.get("details"):
+                                st.markdown("**Quality Score Breakdown**")
                                 for detail in score_data["details"]:
                                     st.markdown(f"- {detail}")
                     else:
-                        st.info("Fundamental data not available for this ticker")
+                        st.info("Tiingo fundamentals not available — requires Power Plan or higher.")
 
                 except Exception as e:
                     st.warning(f"Could not load fundamental data: {e}")
@@ -1270,6 +1282,17 @@ def analyzer_ui(TIINGO_TOKEN):
                         _stop = round(current_price - (atr * 2), 2)
                         _target = round(current_price + (atr * 4), 2)
 
+                        # Classify setup using same EMA/RSI gates as scanner.py
+                        _ema20_val = float(last_row["EMA20"])
+                        _ema50_val = float(last_row["EMA50"])
+                        _rsi_val   = float(last_row["RSI14"])
+                        if _ema20_val > _ema50_val and _rsi_val >= 55:
+                            _az_setup = "Breakout"
+                        elif _ema20_val > _ema50_val and _rsi_val < 55:
+                            _az_setup = "Pullback"
+                        else:
+                            _az_setup = "Neutral"
+
                         stock_data_az = {
                             "price": current_price,
                             "rsi": rsi,
@@ -1277,7 +1300,7 @@ def analyzer_ui(TIINGO_TOKEN):
                             "ema50": ema50,
                             "atr": atr,
                             "volume_ratio": _vol_ratio,
-                            "setup_type": "Pullback" if rsi < 55 else "Breakout",
+                            "setup_type": _az_setup,
                             "sector": "N/A",
                             "fib_zone": _fib_zone,
                             "entry": current_price,
@@ -1565,7 +1588,13 @@ def analyzer_ui(TIINGO_TOKEN):
                 # Pattern / setup type: use your analyzer’s variables if you have them; else default
                 # Calculate setup type using the same logic as scanner
                 def classify_setup_analyzer(df_row) -> str:
-                    """Classify setup type based on EMA and RSI (same logic as scanner)."""
+                    """
+                    Classify the current market state for display / coaching context.
+                    Uses the same EMA gate as scanner.py and confirmed RSI thresholds:
+                      Breakout:  EMA20 > EMA50 AND RSI >= 55
+                      Pullback:  EMA20 > EMA50 AND 35 <= RSI < 55
+                    Falls back to Neutral for downtrends / out-of-range RSI.
+                    """
                     try:
                         ema20 = float(df_row["EMA20"])
                         ema50 = float(df_row["EMA50"])
@@ -1575,12 +1604,9 @@ def analyzer_ui(TIINGO_TOKEN):
 
                     ema_up = ema20 > ema50
 
-                    # Same logic as scanner.py classify_setup()
-                    if ema_up and rsi >= 50:
+                    if ema_up and rsi >= 55:
                         return "Breakout"
-                    elif ema_up and rsi < 50:
-                        return "Pullback"
-                    elif not ema_up and rsi < 60:
+                    elif ema_up and 35 <= rsi < 55:
                         return "Pullback"
                     else:
                         return "Neutral"
@@ -1920,26 +1946,32 @@ Coach me on timing, confirmation, and risk management."""
         45 < float(rsi.iloc[-1]) < 55
     )
 
-   # --- Smarter Auto-Detection Rules (v3: realistic trading behavior) ---
+    # --- Auto-Detection (unified with scanner.py logic) ---
+    # Primary gate: EMA20 > EMA50 (same as scanner evaluate_ticker)
+    # RSI thresholds match scanner sensitivity=3 defaults:
+    #   Breakout: RSI > 55  |  Pullback: 35 <= RSI <= 50 AND price at/below EMA20
     detected = "Neutral"
 
-    # ✅ Trend alignment with slight tolerance
-    trend_up = ema10.iloc[-1] > ema20.iloc[-1] * 0.99 and ema20.iloc[-1] > ema50.iloc[-1] * 0.98
-    trend_down = ema10.iloc[-1] < ema20.iloc[-1] * 1.01 and ema20.iloc[-1] < ema50.iloc[-1] * 1.02
+    _rsi_last  = float(rsi.iloc[-1])
+    _ema20_now = float(ema20.iloc[-1])
+    _ema50_now = float(ema50.iloc[-1])
+    trend_up   = _ema20_now > _ema50_now
+    trend_down = _ema20_now < _ema50_now
 
-    # --- Consolidation ---
-    if range_pct < 3.5 and 40 < rsi.iloc[-1] < 60 and abs(macd.iloc[-1] - macd_sig.iloc[-1]) < 0.2:
+    # --- Consolidation (tight range, flat momentum) — checked first ---
+    if range_pct < 3.5 and 40 < _rsi_last < 58 and abs(float(macd.iloc[-1]) - float(macd_sig.iloc[-1])) < 0.2:
         detected = "Wait (Consolidation)"
 
-    # --- Breakout ---
-    elif trend_up and (last_close >= recent_high * 0.97 or rsi.iloc[-1] > 65 or curr_vol >= avg_vol * 1.2):
+    # --- Breakout: uptrend + RSI showing momentum (matches scanner breakout_rsi=55) ---
+    elif trend_up and _rsi_last >= 55:
         detected = "Breakout"
 
-    # --- Pullback ---
-    elif trend_up and rsi.iloc[-1] < 55 and last_close <= ema20.iloc[-1] * 1.05:
+    # --- Pullback: uptrend + RSI cooling off + price at/near EMA20
+    #     Matches scanner: pullback_rsi_min=35, pullback_rsi_max=50, px <= ema20 ---
+    elif trend_up and 35 <= _rsi_last < 55 and last_close <= _ema20_now * 1.03:
         detected = "Pullback"
 
-    # --- Breakdown ---
+    # --- Breakdown: downtrend with price making new lows ---
     elif trend_down and last_close <= recent_low * 1.03:
         detected = "Breakdown"
 

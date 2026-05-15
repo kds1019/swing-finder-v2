@@ -73,6 +73,12 @@ def calculate_fibonacci_levels(df: pd.DataFrame, lookback: int = 20) -> dict:
     """
     Calculate Fibonacci retracement levels based on recent swing high/low.
 
+    Uses find_pivot_points() to identify the most recent *significant* swing
+    high and low instead of simple max/min of the window, which avoids
+    picking up intraday wicks and single-bar spikes as the swing anchor.
+
+    Falls back to window max/min if fewer than 2 pivots are found.
+
     Args:
         df: DataFrame with OHLC data
         lookback: Number of periods to look back for swing high/low (default: 20)
@@ -89,10 +95,27 @@ def calculate_fibonacci_levels(df: pd.DataFrame, lookback: int = 20) -> dict:
     if df.empty or len(df) < lookback:
         return None
 
-    # Get recent swing high and low
     recent_data = df.tail(lookback)
-    swing_high = float(recent_data["High"].max())
-    swing_low = float(recent_data["Low"].min())
+
+    # ── Pivot-based swing anchor ──────────────────────────────────────────
+    # Use a smaller left/right window so we get enough pivots in a 20-bar slice.
+    pivots = find_pivot_points(recent_data, left_bars=2, right_bars=2)
+    phs = pivots["pivot_highs"]
+    pls = pivots["pivot_lows"]
+
+    if phs:
+        # Most recent significant pivot high
+        swing_high = float(max(phs, key=lambda p: p["bar"])["price"])
+    else:
+        # Fallback: highest high in window
+        swing_high = float(recent_data["High"].max())
+
+    if pls:
+        # Most recent significant pivot low
+        swing_low = float(max(pls, key=lambda p: p["bar"])["price"])
+    else:
+        # Fallback: lowest low in window
+        swing_low = float(recent_data["Low"].min())
     current_price = float(df["Close"].iloc[-1])
 
     # Calculate range
@@ -375,407 +398,531 @@ def calculate_relative_strength(ticker_df: pd.DataFrame, spy_df: pd.DataFrame, p
     }
 
 
-# ---------------- Pattern Recognition ----------------
-def detect_bull_flag(df: pd.DataFrame, lookback: int = 20) -> dict:
+# ---------------- Pivot Point Engine ----------------
+def find_pivot_points(df: pd.DataFrame, left_bars: int = 3, right_bars: int = 3) -> dict:
     """
-    Detect bull flag pattern: strong move up followed by tight consolidation.
+    Find true pivot highs and lows using left/right bar comparison.
+
+    A pivot HIGH at bar i requires:
+        High[i] >= High[i-1..i-left_bars]  AND  High[i] >= High[i+1..i+right_bars]
+
+    A pivot LOW at bar i requires:
+        Low[i]  <= Low[i-1..i-left_bars]   AND  Low[i]  <= Low[i+1..i+right_bars]
+
+    Returns dict with:
+        pivot_highs: list of {"bar": int, "price": float}  (chronological)
+        pivot_lows:  list of {"bar": int, "price": float}  (chronological)
+    """
+    n = len(df)
+    pivot_highs = []
+    pivot_lows  = []
+
+    highs = df["High"].values
+    lows  = df["Low"].values
+
+    for i in range(left_bars, n - right_bars):
+        h = highs[i]
+        lo = lows[i]
+
+        # Pivot high: must be >= all bars in the window (allows ties on one side)
+        if (all(h >= highs[i - j] for j in range(1, left_bars + 1)) and
+                all(h >= highs[i + j] for j in range(1, right_bars + 1))):
+            pivot_highs.append({"bar": i, "price": float(h)})
+
+        # Pivot low: must be <= all bars in the window
+        if (all(lo <= lows[i - j] for j in range(1, left_bars + 1)) and
+                all(lo <= lows[i + j] for j in range(1, right_bars + 1))):
+            pivot_lows.append({"bar": i, "price": float(lo)})
+
+    return {"pivot_highs": pivot_highs, "pivot_lows": pivot_lows}
+
+
+# ---------------- Pattern Recognition ----------------
+def detect_bull_flag(df: pd.DataFrame, lookback: int = 40) -> dict:
+    """
+    Bull Flag: a pivot high (pole top) followed by a tight, slightly-downward
+    consolidation channel before price breaks higher.
+
+    Uses real pivot points:
+      1. Find the most recent pivot high within lookback bars.
+      2. Verify the move INTO that pivot high was >= 5% (the pole).
+      3. After the pivot high, check that price consolidates in a narrow range
+         (< 8% of the pivot-high price) with no new pivot high.
+      4. Volume should dry up during the flag.
     """
     if len(df) < lookback:
         return {"detected": False}
 
     recent = df.tail(lookback)
+    pivots = find_pivot_points(recent, left_bars=3, right_bars=3)
+    phs = pivots["pivot_highs"]
 
-    # Split into two halves
-    first_half = recent.head(lookback // 2)
-    second_half = recent.tail(lookback // 2)
+    if not phs:
+        return {"detected": False}
 
-    # Check for strong initial move (>5% gain)
-    initial_gain = (first_half["Close"].iloc[-1] / first_half["Close"].iloc[0]) - 1
-    strong_move = initial_gain > 0.05
+    # Use the most recent pivot high as the pole top
+    pole_top = phs[-1]
+    pole_bar  = pole_top["bar"]
+    pole_price = pole_top["price"]
 
-    # Check for tight consolidation (range < 5% of price)
-    consolidation_range = (second_half["High"].max() - second_half["Low"].min()) / second_half["Close"].mean()
-    tight_consolidation = consolidation_range < 0.05
+    # Need at least 3 bars of pole and 5 bars of flag
+    if pole_bar < 3 or (len(recent) - 1 - pole_bar) < 5:
+        return {"detected": False}
 
-    # Volume should decrease during consolidation
-    first_half_vol = first_half["Volume"].mean()
-    second_half_vol = second_half["Volume"].mean()
-    volume_decrease = second_half_vol < first_half_vol * 0.8
+    pole_start_price = float(recent["Close"].iloc[max(0, pole_bar - 5)])
+    initial_gain = (pole_price - pole_start_price) / pole_start_price if pole_start_price > 0 else 0
+    strong_pole  = initial_gain >= 0.05
 
-    detected = strong_move and tight_consolidation
+    # Flag = bars after the pivot high up to now
+    flag_bars = recent.iloc[pole_bar:]
+    flag_high  = float(flag_bars["High"].max())
+    flag_low   = float(flag_bars["Low"].min())
+    flag_range = (flag_high - flag_low) / pole_price if pole_price > 0 else 1
+
+    tight_flag = flag_range < 0.08
+
+    # Flag should not make a new high above the pole
+    no_new_high = flag_high <= pole_price * 1.01
+
+    # Volume dry-up during flag
+    pole_bars_slice = recent.iloc[max(0, pole_bar - 5):pole_bar + 1]
+    vol_pole = pole_bars_slice["Volume"].mean() if len(pole_bars_slice) > 0 else 1
+    vol_flag = flag_bars["Volume"].mean() if len(flag_bars) > 0 else vol_pole
+    volume_decrease = vol_flag < vol_pole * 0.85
+
+    detected = strong_pole and tight_flag and no_new_high
     confidence = 0
-
     if detected:
-        confidence = 60
-        if volume_decrease:
-            confidence += 20
-        if consolidation_range < 0.03:
-            confidence += 10
-        if initial_gain > 0.10:
-            confidence += 10
+        confidence = 65
+        if volume_decrease:        confidence += 15
+        if flag_range < 0.05:      confidence += 10
+        if initial_gain >= 0.10:   confidence += 10
 
     return {
         "detected": detected,
         "confidence": min(100, confidence),
         "initial_gain": round(initial_gain * 100, 1),
-        "consolidation_range": round(consolidation_range * 100, 1)
+        "consolidation_range": round(flag_range * 100, 1),
     }
 
 
-def detect_cup_and_handle(df: pd.DataFrame, lookback: int = 40) -> dict:
+def detect_cup_and_handle(df: pd.DataFrame, lookback: int = 60) -> dict:
     """
-    Detect cup and handle pattern: U-shaped recovery with small pullback.
+    Cup and Handle: uses pivot points to find a real left-rim high, cup-bottom low,
+    and right-rim recovery before a small handle pullback.
+
+      1. Find a significant pivot high (left rim) and the deepest pivot low after it (cup bottom).
+      2. Verify the right side recovers to >= 92% of the left rim.
+      3. Verify cup depth is 12–40%.
+      4. The last 20% of bars form a tight handle (< 10% range).
     """
     if len(df) < lookback:
         return {"detected": False}
 
     recent = df.tail(lookback)
+    pivots = find_pivot_points(recent, left_bars=3, right_bars=3)
+    phs = pivots["pivot_highs"]
+    pls = pivots["pivot_lows"]
 
-    # Divide into three parts: left side, bottom, right side
-    third = lookback // 3
-    left_side = recent.iloc[:third]
-    bottom = recent.iloc[third:2*third]
-    right_side = recent.iloc[2*third:]
+    if len(phs) < 1 or len(pls) < 1:
+        return {"detected": False}
 
-    # Check for U-shape: decline then recovery
-    left_high = left_side["High"].max()
-    bottom_low = bottom["Low"].min()
-    right_high = right_side["High"].max()
+    # Left rim = first significant pivot high
+    left_rim    = phs[0]
+    left_bar    = left_rim["bar"]
+    left_price  = left_rim["price"]
 
-    # Cup depth (should be 12-33% typically)
-    cup_depth = (left_high - bottom_low) / left_high
-    valid_depth = 0.12 <= cup_depth <= 0.33
+    # Cup bottom = deepest pivot low AFTER the left rim
+    lows_after = [p for p in pls if p["bar"] > left_bar]
+    if not lows_after:
+        return {"detected": False}
+    cup_bottom = min(lows_after, key=lambda p: p["price"])
+    bottom_bar  = cup_bottom["bar"]
+    bottom_price = cup_bottom["price"]
 
-    # Right side should recover to near left side high
-    recovery = right_high >= left_high * 0.95
+    cup_depth = (left_price - bottom_price) / left_price if left_price > 0 else 0
+    valid_depth = 0.12 <= cup_depth <= 0.40
 
-    # Handle: small pullback at the end (last 25% of pattern)
-    handle_start = len(recent) - (lookback // 4)
-    handle = recent.iloc[handle_start:]
-    handle_depth = (handle["High"].max() - handle["Low"].min()) / handle["Close"].mean()
-    small_handle = handle_depth < 0.10
+    # Right side recovery: max high after cup bottom
+    right_slice = recent.iloc[bottom_bar:]
+    if right_slice.empty:
+        return {"detected": False}
+    right_high = float(right_slice["High"].max())
+    recovery   = right_high >= left_price * 0.92
+
+    # Handle: last 20% of bars should be tight (< 10% range)
+    handle_start = max(bottom_bar, len(recent) - max(5, lookback // 5))
+    handle_bars  = recent.iloc[handle_start:]
+    if handle_bars.empty:
+        return {"detected": False}
+    handle_range = (float(handle_bars["High"].max()) - float(handle_bars["Low"].min())) / left_price
+    small_handle = handle_range < 0.10
 
     detected = valid_depth and recovery and small_handle
     confidence = 0
-
     if detected:
         confidence = 70
-        if 0.15 <= cup_depth <= 0.25:  # Ideal depth
-            confidence += 15
-        if right_high >= left_high * 0.98:  # Strong recovery
-            confidence += 15
+        if 0.15 <= cup_depth <= 0.30:      confidence += 15
+        if right_high >= left_price * 0.97: confidence += 15
 
     return {
         "detected": detected,
         "confidence": min(100, confidence),
         "cup_depth": round(cup_depth * 100, 1),
-        "recovery_pct": round((right_high / left_high - 1) * 100, 1)
+        "recovery_pct": round((right_high / left_price - 1) * 100, 1),
     }
 
 
-def detect_double_bottom(df: pd.DataFrame, lookback: int = 30) -> dict:
+def detect_double_bottom(df: pd.DataFrame, lookback: int = 50) -> dict:
     """
-    Detect double bottom pattern: two lows at similar price with peak in between.
+    Double Bottom: two real pivot lows at similar price levels separated by a
+    meaningful bounce, with current price approaching or above the peak between them.
+
+      1. Find all pivot lows in the window.
+      2. Identify any two pivot lows within 4% of each other separated by >= 5 bars.
+      3. Verify a meaningful peak (>= 5%) exists between the two lows.
+      4. Breakout = current price > that peak.
     """
     if len(df) < lookback:
         return {"detected": False}
 
     recent = df.tail(lookback)
+    pivots = find_pivot_points(recent, left_bars=3, right_bars=3)
+    pls = pivots["pivot_lows"]
 
-    # Find the two lowest points
-    lows = recent.nsmallest(5, "Low")
-
-    if len(lows) < 2:
+    if len(pls) < 2:
         return {"detected": False}
 
-    # Get the two lowest lows
-    first_low_idx = lows.index[0]
-    second_low_idx = lows.index[1]
+    best = None  # (similarity, first_low, second_low, peak)
+    for i in range(len(pls) - 1):
+        for j in range(i + 1, len(pls)):
+            p1, p2 = pls[i], pls[j]
+            if p2["bar"] - p1["bar"] < 5:
+                continue  # too close together
+            similarity = abs(p1["price"] - p2["price"]) / p1["price"]
+            if similarity >= 0.04:
+                continue  # lows too different
 
-    # Make sure they're in chronological order
-    if first_low_idx > second_low_idx:
-        first_low_idx, second_low_idx = second_low_idx, first_low_idx
+            # Peak between them
+            between = recent.iloc[p1["bar"]:p2["bar"] + 1]
+            if between.empty:
+                continue
+            peak = float(between["High"].max())
+            peak_height = (peak - min(p1["price"], p2["price"])) / min(p1["price"], p2["price"])
+            if peak_height < 0.05:
+                continue  # no meaningful bounce
 
-    first_low = recent.loc[first_low_idx, "Low"]
-    second_low = recent.loc[second_low_idx, "Low"]
+            if best is None or similarity < best[0]:
+                best = (similarity, p1, p2, peak)
 
-    # Lows should be within 3% of each other
-    low_similarity = abs(first_low - second_low) / first_low
-    similar_lows = low_similarity < 0.03
+    if best is None:
+        return {"detected": False}
 
-    # There should be a peak between the two lows
-    between = recent.loc[first_low_idx:second_low_idx]
-    if len(between) > 0:
-        peak = between["High"].max()
-        peak_height = (peak - first_low) / first_low
-        valid_peak = peak_height > 0.05  # At least 5% bounce
-    else:
-        valid_peak = False
+    similarity, p1, p2, peak = best
+    current_price = float(recent["Close"].iloc[-1])
+    breakout = current_price > peak * 1.005
 
-    # Current price should be above the peak (breakout)
-    current_price = recent["Close"].iloc[-1]
-    breakout = current_price > peak * 1.01 if valid_peak else False
-
-    detected = similar_lows and valid_peak
-    confidence = 0
-
-    if detected:
-        confidence = 65
-        if low_similarity < 0.02:  # Very similar lows
-            confidence += 15
-        if breakout:  # Already breaking out
-            confidence += 20
+    confidence = 65
+    if similarity < 0.02:  confidence += 15
+    if breakout:           confidence += 20
 
     return {
-        "detected": detected,
+        "detected": True,
         "confidence": min(100, confidence),
-        "low_similarity": round(low_similarity * 100, 1),
-        "breakout": breakout
+        "low_similarity": round(similarity * 100, 1),
+        "breakout": breakout,
     }
 
 
-def detect_ascending_triangle(df: pd.DataFrame, lookback: int = 30) -> dict:
+def detect_ascending_triangle(df: pd.DataFrame, lookback: int = 50) -> dict:
     """
-    Detect ascending triangle: flat resistance with rising support.
+    Ascending Triangle: flat pivot highs (resistance) with progressively higher
+    pivot lows (rising support).
+
+      1. Find pivot highs within 2.5% of each other (flat resistance).
+      2. Require >= 2 such pivot highs.
+      3. Confirm pivot lows are trending upward.
+      4. Bonus: volume contraction.
     """
     if len(df) < lookback:
         return {"detected": False}
 
     recent = df.tail(lookback)
+    pivots = find_pivot_points(recent, left_bars=3, right_bars=3)
+    phs = pivots["pivot_highs"]
+    pls = pivots["pivot_lows"]
 
-    # Find resistance level (should be relatively flat)
-    highs = recent["High"]
-    resistance = highs.max()
+    if len(phs) < 2 or len(pls) < 2:
+        return {"detected": False}
 
-    # Count how many times price touched resistance (within 2%)
-    touches = sum(highs >= resistance * 0.98)
-    multiple_touches = touches >= 2
+    # Find the highest pivot high as the resistance zone
+    resistance = max(phs, key=lambda p: p["price"])["price"]
+    flat_highs  = [p for p in phs if abs(p["price"] - resistance) / resistance <= 0.025]
+    multiple_touches = len(flat_highs) >= 2
 
-    # Check if lows are rising (ascending support)
-    first_half_lows = recent.head(lookback // 2)["Low"].mean()
-    second_half_lows = recent.tail(lookback // 2)["Low"].mean()
-    rising_lows = second_half_lows > first_half_lows * 1.02
+    # Pivot lows should be rising
+    pl_prices = [p["price"] for p in pls]
+    rising_lows = len(pl_prices) >= 2 and pl_prices[-1] > pl_prices[0] * 1.01
 
-    # Volume should contract during pattern
-    first_half_vol = recent.head(lookback // 2)["Volume"].mean()
-    second_half_vol = recent.tail(lookback // 2)["Volume"].mean()
-    volume_contraction = second_half_vol < first_half_vol
+    # Volume contraction
+    mid = len(recent) // 2
+    vol_first  = recent.iloc[:mid]["Volume"].mean()
+    vol_second = recent.iloc[mid:]["Volume"].mean()
+    volume_contraction = vol_second < vol_first
 
     detected = multiple_touches and rising_lows
     confidence = 0
-
     if detected:
-        confidence = 60
-        if touches >= 3:
-            confidence += 15
-        if volume_contraction:
-            confidence += 15
-        if rising_lows and second_half_lows > first_half_lows * 1.05:
+        confidence = 62
+        if len(flat_highs) >= 3:     confidence += 15
+        if volume_contraction:        confidence += 13
+        n = len(pl_prices)
+        if n >= 2 and pl_prices[-1] > pl_prices[0] * 1.04:
             confidence += 10
 
     return {
         "detected": detected,
         "confidence": min(100, confidence),
-        "resistance_touches": touches,
-        "support_rising": rising_lows
+        "resistance_touches": len(flat_highs),
+        "support_rising": rising_lows,
     }
 
 
-def detect_bearish_flag(df: pd.DataFrame, lookback: int = 20) -> dict:
+def detect_bearish_flag(df: pd.DataFrame, lookback: int = 40) -> dict:
     """
-    Detect bearish flag: strong move down followed by tight upward consolidation.
+    Bear Flag: a pivot low (pole bottom) followed by a tight, slightly-upward
+    drift before price breaks lower again.
+
+      1. Find the most recent pivot low within lookback bars.
+      2. Verify the move INTO that pivot low was >= 5% decline.
+      3. After the pivot low, check tight consolidation (< 8%) with slight upward drift.
+      4. Volume dries up during flag.
     """
     if len(df) < lookback:
         return {"detected": False}
 
     recent = df.tail(lookback)
-    first_half = recent.head(lookback // 2)
-    second_half = recent.tail(lookback // 2)
+    pivots = find_pivot_points(recent, left_bars=3, right_bars=3)
+    pls = pivots["pivot_lows"]
 
-    # Strong initial drop (>5% decline)
-    initial_drop = (first_half["Close"].iloc[0] / first_half["Close"].iloc[-1]) - 1
-    strong_drop = initial_drop > 0.05
+    if not pls:
+        return {"detected": False}
 
-    # Tight consolidation (range < 5% of price)
-    consolidation_range = (second_half["High"].max() - second_half["Low"].min()) / second_half["Close"].mean()
-    tight_consolidation = consolidation_range < 0.05
+    pole_bottom = pls[-1]
+    pole_bar    = pole_bottom["bar"]
+    pole_price  = pole_bottom["price"]
 
-    # Consolidation should drift slightly upward (bear flag retraces up)
-    second_half_slope = second_half["Close"].iloc[-1] - second_half["Close"].iloc[0]
-    slight_upward_drift = second_half_slope > 0
+    if pole_bar < 3 or (len(recent) - 1 - pole_bar) < 5:
+        return {"detected": False}
 
-    # Volume should decrease during consolidation
-    first_half_vol = first_half["Volume"].mean()
-    second_half_vol = second_half["Volume"].mean()
-    volume_decrease = second_half_vol < first_half_vol * 0.8
+    pole_start_price = float(recent["Close"].iloc[max(0, pole_bar - 5)])
+    initial_drop = (pole_start_price - pole_price) / pole_start_price if pole_start_price > 0 else 0
+    strong_pole  = initial_drop >= 0.05
 
-    detected = strong_drop and tight_consolidation and slight_upward_drift
+    flag_bars = recent.iloc[pole_bar:]
+    flag_high  = float(flag_bars["High"].max())
+    flag_low   = float(flag_bars["Low"].min())
+    flag_range = (flag_high - flag_low) / pole_price if pole_price > 0 else 1
+    tight_flag = flag_range < 0.08
+
+    # Flag drifts slightly upward (bearish flag retraces up)
+    upward_drift = float(flag_bars["Close"].iloc[-1]) > float(flag_bars["Close"].iloc[0])
+
+    # No new low below pole
+    no_new_low = flag_low >= pole_price * 0.99
+
+    vol_pole = recent.iloc[max(0, pole_bar - 5):pole_bar + 1]["Volume"].mean()
+    vol_flag = flag_bars["Volume"].mean() if len(flag_bars) > 0 else vol_pole
+    volume_decrease = vol_flag < vol_pole * 0.85
+
+    detected = strong_pole and tight_flag and upward_drift and no_new_low
     confidence = 0
     if detected:
-        confidence = 60
-        if volume_decrease:
-            confidence += 20
-        if consolidation_range < 0.03:
-            confidence += 10
-        if initial_drop > 0.10:
-            confidence += 10
+        confidence = 65
+        if volume_decrease:      confidence += 15
+        if flag_range < 0.05:    confidence += 10
+        if initial_drop >= 0.10: confidence += 10
 
     return {
         "detected": detected,
         "confidence": min(100, confidence),
         "initial_drop": round(initial_drop * 100, 1),
-        "consolidation_range": round(consolidation_range * 100, 1),
+        "consolidation_range": round(flag_range * 100, 1),
     }
 
 
-def detect_double_top(df: pd.DataFrame, lookback: int = 30) -> dict:
+def detect_double_top(df: pd.DataFrame, lookback: int = 50) -> dict:
     """
-    Detect double top: two highs at similar price with a trough in between.
+    Double Top: two real pivot highs at similar price levels separated by a
+    meaningful trough, with current price approaching or below that trough.
+
+      1. Find all pivot highs in the window.
+      2. Identify any two pivot highs within 4% of each other separated by >= 5 bars.
+      3. Verify a meaningful trough (>= 5% drop) exists between them.
+      4. Breakdown = current price < that trough.
     """
     if len(df) < lookback:
         return {"detected": False}
 
     recent = df.tail(lookback)
+    pivots = find_pivot_points(recent, left_bars=3, right_bars=3)
+    phs = pivots["pivot_highs"]
 
-    # Find the two highest points
-    highs = recent.nlargest(5, "High")
-    if len(highs) < 2:
+    if len(phs) < 2:
         return {"detected": False}
 
-    first_high_idx = highs.index[0]
-    second_high_idx = highs.index[1]
+    best = None
+    for i in range(len(phs) - 1):
+        for j in range(i + 1, len(phs)):
+            p1, p2 = phs[i], phs[j]
+            if p2["bar"] - p1["bar"] < 5:
+                continue
+            similarity = abs(p1["price"] - p2["price"]) / p1["price"]
+            if similarity >= 0.04:
+                continue
 
-    if first_high_idx > second_high_idx:
-        first_high_idx, second_high_idx = second_high_idx, first_high_idx
+            between = recent.iloc[p1["bar"]:p2["bar"] + 1]
+            if between.empty:
+                continue
+            trough = float(between["Low"].min())
+            trough_depth = (max(p1["price"], p2["price"]) - trough) / max(p1["price"], p2["price"])
+            if trough_depth < 0.05:
+                continue
 
-    first_high = recent.loc[first_high_idx, "High"]
-    second_high = recent.loc[second_high_idx, "High"]
+            if best is None or similarity < best[0]:
+                best = (similarity, p1, p2, trough)
 
-    # Peaks should be within 3% of each other
-    high_similarity = abs(first_high - second_high) / first_high
-    similar_highs = high_similarity < 0.03
+    if best is None:
+        return {"detected": False}
 
-    # There should be a trough between the two peaks
-    between = recent.loc[first_high_idx:second_high_idx]
-    if len(between) > 0:
-        trough = between["Low"].min()
-        trough_depth = (first_high - trough) / first_high
-        valid_trough = trough_depth > 0.05  # At least 5% pullback
-    else:
-        valid_trough = False
+    similarity, p1, p2, trough = best
+    current_price = float(recent["Close"].iloc[-1])
+    breakdown = current_price < trough * 0.995
 
-    # Current price should be below the trough (breakdown)
-    current_price = recent["Close"].iloc[-1]
-    breakdown = current_price < trough * 0.99 if valid_trough else False
-
-    detected = similar_highs and valid_trough
-    confidence = 0
-    if detected:
-        confidence = 65
-        if high_similarity < 0.02:
-            confidence += 15
-        if breakdown:
-            confidence += 20
+    confidence = 65
+    if similarity < 0.02:  confidence += 15
+    if breakdown:          confidence += 20
 
     return {
-        "detected": detected,
+        "detected": True,
         "confidence": min(100, confidence),
-        "high_similarity": round(high_similarity * 100, 1),
+        "high_similarity": round(similarity * 100, 1),
         "breakdown": breakdown,
     }
 
 
-def detect_head_and_shoulders(df: pd.DataFrame, lookback: int = 40) -> dict:
+def detect_head_and_shoulders(df: pd.DataFrame, lookback: int = 60) -> dict:
     """
-    Detect head and shoulders: left shoulder, higher head, right shoulder at similar level.
+    Head & Shoulders: three pivot highs where the middle (head) is highest,
+    outer two (shoulders) are at similar levels, and price is near/below the neckline.
+
+      1. Require at least 3 pivot highs.
+      2. For every combination of 3 pivots: check head > both shoulders by >= 2%.
+      3. Shoulders within 6% of each other.
+      4. Neckline = average of the two troughs between the peaks.
+      5. Breakdown = price < neckline.
     """
     if len(df) < lookback:
         return {"detected": False}
 
     recent = df.tail(lookback)
-    quarter = lookback // 4
+    pivots = find_pivot_points(recent, left_bars=3, right_bars=3)
+    phs = pivots["pivot_highs"]
 
-    left_shoulder  = recent.iloc[0:quarter]
-    left_valley    = recent.iloc[quarter:2*quarter]
-    head_zone      = recent.iloc[quarter:3*quarter]
-    right_valley   = recent.iloc[2*quarter:3*quarter]
-    right_shoulder = recent.iloc[3*quarter:]
+    if len(phs) < 3:
+        return {"detected": False}
 
-    ls_high  = left_shoulder["High"].max()
-    head_high = head_zone["High"].max()
-    rs_high  = right_shoulder["High"].max()
-    neckline = (left_valley["Low"].min() + right_valley["Low"].min()) / 2
+    best = None
+    for i in range(len(phs) - 2):
+        ls, head, rs = phs[i], phs[i + 1], phs[i + 2]
+        # Head must be clearly above both shoulders
+        if not (head["price"] > ls["price"] * 1.02 and head["price"] > rs["price"] * 1.02):
+            continue
+        # Shoulders at similar level
+        shoulder_sim = abs(ls["price"] - rs["price"]) / ls["price"]
+        if shoulder_sim >= 0.06:
+            continue
 
-    # Head must be higher than both shoulders
-    head_above_shoulders = head_high > ls_high * 1.03 and head_high > rs_high * 1.03
+        # Neckline from troughs between peaks
+        left_trough  = float(recent.iloc[ls["bar"]:head["bar"] + 1]["Low"].min())
+        right_trough = float(recent.iloc[head["bar"]:rs["bar"] + 1]["Low"].min())
+        neckline = (left_trough + right_trough) / 2
 
-    # Shoulders should be at similar levels (within 5%)
-    shoulder_similarity = abs(ls_high - rs_high) / ls_high
-    similar_shoulders = shoulder_similarity < 0.05
+        if best is None or shoulder_sim < best[0]:
+            best = (shoulder_sim, ls, head, rs, neckline)
 
-    # Current price near or below neckline
-    current_price = recent["Close"].iloc[-1]
-    near_neckline = current_price <= neckline * 1.03
-    breakdown = current_price < neckline * 0.99
+    if best is None:
+        return {"detected": False}
 
-    detected = head_above_shoulders and similar_shoulders and near_neckline
-    confidence = 0
-    if detected:
-        confidence = 65
-        if similar_shoulders and shoulder_similarity < 0.03:
-            confidence += 15
-        if breakdown:
-            confidence += 20
+    shoulder_sim, ls, head, rs, neckline = best
+    current_price = float(recent["Close"].iloc[-1])
+    near_neckline = current_price <= neckline * 1.04
+    breakdown     = current_price < neckline * 0.99
+
+    if not near_neckline:
+        return {"detected": False}
+
+    confidence = 65
+    if shoulder_sim < 0.03:  confidence += 15
+    if breakdown:             confidence += 20
 
     return {
-        "detected": detected,
+        "detected": True,
         "confidence": min(100, confidence),
-        "shoulder_similarity": round(shoulder_similarity * 100, 1),
+        "shoulder_similarity": round(shoulder_sim * 100, 1),
         "breakdown": breakdown,
         "neckline": round(neckline, 2),
     }
 
 
-def detect_descending_triangle(df: pd.DataFrame, lookback: int = 30) -> dict:
+def detect_descending_triangle(df: pd.DataFrame, lookback: int = 50) -> dict:
     """
-    Detect descending triangle: flat support with declining highs (bearish continuation).
+    Descending Triangle: flat pivot lows (support zone) with progressively lower
+    pivot highs (declining resistance).
+
+      1. Find pivot lows within 2.5% of each other (flat support).
+      2. Require >= 2 such pivot lows.
+      3. Confirm pivot highs are trending downward.
+      4. Bonus: volume contraction.
     """
     if len(df) < lookback:
         return {"detected": False}
 
     recent = df.tail(lookback)
+    pivots = find_pivot_points(recent, left_bars=3, right_bars=3)
+    phs = pivots["pivot_highs"]
+    pls = pivots["pivot_lows"]
 
-    # Flat support: lowest lows cluster near the same level
-    lows = recent["Low"]
-    support = lows.min()
-    touches = int(sum(lows <= support * 1.02))
-    multiple_touches = touches >= 2
+    if len(pls) < 2 or len(phs) < 2:
+        return {"detected": False}
 
-    # Declining highs (descending resistance)
-    first_half_highs = recent.head(lookback // 2)["High"].mean()
-    second_half_highs = recent.tail(lookback // 2)["High"].mean()
-    declining_highs = second_half_highs < first_half_highs * 0.98
+    # Flat support: pivot lows within 2.5% of the lowest
+    support = min(pls, key=lambda p: p["price"])["price"]
+    flat_lows = [p for p in pls if abs(p["price"] - support) / support <= 0.025]
+    multiple_touches = len(flat_lows) >= 2
 
-    # Volume contraction
-    first_half_vol = recent.head(lookback // 2)["Volume"].mean()
-    second_half_vol = recent.tail(lookback // 2)["Volume"].mean()
-    volume_contraction = second_half_vol < first_half_vol
+    # Declining pivot highs
+    ph_prices = [p["price"] for p in phs]
+    declining_highs = len(ph_prices) >= 2 and ph_prices[-1] < ph_prices[0] * 0.99
+
+    mid = len(recent) // 2
+    vol_first  = recent.iloc[:mid]["Volume"].mean()
+    vol_second = recent.iloc[mid:]["Volume"].mean()
+    volume_contraction = vol_second < vol_first
 
     detected = multiple_touches and declining_highs
     confidence = 0
     if detected:
-        confidence = 60
-        if touches >= 3:
-            confidence += 15
-        if volume_contraction:
-            confidence += 15
-        if second_half_highs < first_half_highs * 0.95:
+        confidence = 62
+        if len(flat_lows) >= 3:   confidence += 15
+        if volume_contraction:     confidence += 13
+        if ph_prices[-1] < ph_prices[0] * 0.95:
             confidence += 10
 
     return {
         "detected": detected,
         "confidence": min(100, confidence),
-        "support_touches": touches,
+        "support_touches": len(flat_lows),
         "highs_declining": declining_highs,
     }
 
