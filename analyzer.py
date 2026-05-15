@@ -939,11 +939,13 @@ def analyzer_ui(TIINGO_TOKEN):
 
                 try:
                     fund = get_tiingo_fundamentals_for_claude(symbol, TIINGO_TOKEN)
-                    stmt = get_fundamentals(symbol, TIINGO_TOKEN)
 
-                    if fund:
-                        # Quality score from quarterly statements
-                        score_data = calculate_fundamental_score(stmt) if stmt else {"score": 0, "grade": "N/A", "details": []}
+                    # Only treat fund as valid if it has real financial keys (not just _error)
+                    real_fund_keys = {k for k in (fund or {}) if not k.startswith("_")}
+
+                    if fund and real_fund_keys:
+                        # Score from the flat dict — it already has profit_margin_pct, roe_pct, etc.
+                        score_data = calculate_fundamental_score(fund)
                         score = score_data.get("score", 0)
                         grade = score_data.get("grade", "N/A")
                         score_color = "green" if score >= 70 else "orange" if score >= 50 else "red"
@@ -1686,20 +1688,19 @@ def analyzer_ui(TIINGO_TOKEN):
                     # Get fundamental data (if available)
                     fund_info = ""
                     try:
-                        fundamentals = get_fundamentals(symbol, TIINGO_TOKEN)
-                        if fundamentals and fundamentals.get("quarterly"):
-                            score_data = calculate_fundamental_score(fundamentals)
-                            metrics = extract_key_metrics(fundamentals)
-
+                        fund_flat = get_tiingo_fundamentals_for_claude(symbol, TIINGO_TOKEN)
+                        real_keys = {k for k in (fund_flat or {}) if not k.startswith("_")}
+                        if fund_flat and real_keys:
+                            score_data = calculate_fundamental_score(fund_flat)
                             fund_info = f"""
 **FUNDAMENTAL ANALYSIS:**
 - Fundamental Score: {score_data['score']}/100 (Grade: {score_data['grade']})
-- Profit Margin: {metrics.get('profit_margin', 0):.1f}%
-- ROE: {metrics.get('roe', 0):.1f}% | ROA: {metrics.get('roa', 0):.1f}%
-- Debt/Equity: {metrics.get('debt_to_equity', 0):.2f}
-- Current Ratio: {metrics.get('current_ratio', 0):.2f}
-- Revenue: {format_large_number(metrics.get('revenue', 0))}
-- Net Income: {format_large_number(metrics.get('net_income', 0))}
+- Profit Margin: {fund_flat.get('profit_margin_pct') or 0:.1f}%
+- ROE: {fund_flat.get('roe_pct') or 0:.1f}%
+- Debt/Equity: {fund_flat.get('debt_to_equity') or 0:.2f}
+- Current Ratio: {fund_flat.get('current_ratio') or 0:.2f}
+- Revenue: {format_large_number(fund_flat.get('revenue') or 0)}
+- Net Income: {format_large_number(fund_flat.get('net_income') or 0)}
 """
                     except:
                         pass  # Fundamentals not available
@@ -2179,9 +2180,10 @@ Coach me on timing, confirmation, and risk management."""
             # Get fundamentals
             fund_score = "N/A"
             try:
-                fundamentals = get_fundamentals(symbol, TIINGO_TOKEN)
-                if fundamentals and fundamentals.get("quarterly"):
-                    score_data = calculate_fundamental_score(fundamentals)
+                fund_flat = get_tiingo_fundamentals_for_claude(symbol, TIINGO_TOKEN)
+                real_keys = {k for k in (fund_flat or {}) if not k.startswith("_")}
+                if fund_flat and real_keys:
+                    score_data = calculate_fundamental_score(fund_flat)
                     fund_score = f"{score_data['score']}/100"
             except:
                 pass
