@@ -33,7 +33,7 @@ from utils.claude_analyzer import analyze_single_stock
 # This dramatically reduces crashes on mobile devices
 
 @st.cache_data(ttl=300, show_spinner=False)
-def get_cached_stock_data(symbol: str, token: str, days: int = 250):
+def get_cached_stock_data(symbol: str, token: str, days: int = 504):
     """Cache stock price data for 5 minutes to prevent re-fetching."""
     return tiingo_history(symbol, token, days)
 
@@ -201,9 +201,9 @@ def analyzer_ui(TIINGO_TOKEN):
 
     if run_analysis:
         # 🚀 MOBILE OPTIMIZATION: Use cached data to prevent re-fetching
-        # Fetch 250 days to calculate EMA200, but will display last 90 days on chart
+        # Fetch 504 days (~2 years) for ML training; chart still displays last 90 days
         with st.spinner("📊 Loading data..."):
-            df = get_cached_stock_data(symbol, TIINGO_TOKEN, 250)
+            df = get_cached_stock_data(symbol, TIINGO_TOKEN, 504)
 
         if df is None or df.empty:
             st.warning("⚠️ No historical data returned for this ticker.")

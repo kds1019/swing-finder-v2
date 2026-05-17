@@ -1,75 +1,117 @@
 """
 Advanced ML Models for Price Prediction
 Uses Random Forest and Gradient Boosting for more accurate forecasts.
+Training window: up to 2 years of daily bars.
+VIX is included as a market-fear feature.
 """
 
 import pandas as pd
 import numpy as np
 from typing import Dict, Any
 
+# Minimum bars required before we'll attempt training
+_MIN_BARS = 60
 
-def prepare_features(df: pd.DataFrame, lookback: int = 30) -> tuple:
+
+def _fetch_vix_history(start_date: str, end_date: str) -> pd.Series:
     """
-    Prepare features for ML models.
-    Returns (X, y, feature_names)
+    Fetch VIX daily close from Yahoo Finance and return as a date-indexed Series.
+    Returns empty Series on failure so callers can proceed without VIX.
     """
-    if len(df) < lookback + 10:
+    try:
+        import yfinance as yf
+        vix = yf.Ticker("^VIX")
+        hist = vix.history(start=start_date, end=end_date)
+        if hist.empty:
+            return pd.Series(dtype=float)
+        series = hist["Close"].copy()
+        series.index = pd.to_datetime(series.index).normalize().tz_localize(None)
+        series.name = "vix"
+        return series
+    except Exception:
+        return pd.Series(dtype=float)
+
+
+def prepare_features(df: pd.DataFrame, lookback: int = 500) -> tuple:
+    """
+    Prepare features for ML models using up to `lookback` bars of history.
+    Returns (X, y, feature_names).
+
+    Features include:
+    - OHLCV raw values
+    - Technical indicators: RSI14, EMA20, EMA50, MACD (if present)
+    - Derived: price_change %, volume_change %, high-low range
+    - Rolling MAs: 5, 10, 20-day
+    - Rolling volatility: 10-day std
+    - Lag features: close & volume at 1, 2, 3, 5 days ago
+    - VIX (market fear index) — aligned by date via Yahoo Finance
+    """
+    if len(df) < _MIN_BARS:
         return None, None, None
-    
-    recent = df.tail(lookback + 10).copy()
-    
-    # Create features
-    features = pd.DataFrame()
-    
+
+    recent = df.tail(lookback).copy()
+
+    # Normalise date index to timezone-naive dates for VIX merge
+    recent.index = pd.to_datetime(recent.index).normalize().tz_localize(None)
+
+    # ── Fetch VIX aligned to the stock's date range ──────────────────────────
+    start_str = recent.index[0].strftime("%Y-%m-%d")
+    end_str   = (recent.index[-1] + pd.Timedelta(days=2)).strftime("%Y-%m-%d")
+    vix_series = _fetch_vix_history(start_str, end_str)
+
+    # Create features DataFrame
+    features = pd.DataFrame(index=recent.index)
+
     # Price-based features
-    features["close"] = recent["Close"]
-    features["high"] = recent["High"]
-    features["low"] = recent["Low"]
+    features["close"]  = recent["Close"]
+    features["high"]   = recent["High"]
+    features["low"]    = recent["Low"]
     features["volume"] = recent["Volume"]
-    
+
     # Technical indicators (if available)
     if "RSI14" in recent.columns:
-        features["rsi"] = recent["RSI14"]
+        features["rsi"]   = recent["RSI14"]
     if "MACD" in recent.columns:
-        features["macd"] = recent["MACD"]
+        features["macd"]  = recent["MACD"]
     if "EMA20" in recent.columns:
         features["ema20"] = recent["EMA20"]
     if "EMA50" in recent.columns:
         features["ema50"] = recent["EMA50"]
-    
+
     # Derived features
-    features["price_change"] = recent["Close"].pct_change()
+    features["price_change"]  = recent["Close"].pct_change()
     features["volume_change"] = recent["Volume"].pct_change()
-    features["high_low_range"] = (recent["High"] - recent["Low"]) / recent["Close"]
-    
-    # Moving averages
-    features["ma5"] = recent["Close"].rolling(5).mean()
+    features["high_low_range"]= (recent["High"] - recent["Low"]) / recent["Close"]
+
+    # Rolling moving averages
+    features["ma5"]  = recent["Close"].rolling(5).mean()
     features["ma10"] = recent["Close"].rolling(10).mean()
     features["ma20"] = recent["Close"].rolling(20).mean()
-    
-    # Volatility
+
+    # Rolling volatility (10-day std of close)
     features["volatility"] = recent["Close"].rolling(10).std()
-    
-    # Lag features (previous days)
+
+    # Lag features
     for lag in [1, 2, 3, 5]:
-        features[f"close_lag_{lag}"] = recent["Close"].shift(lag)
+        features[f"close_lag_{lag}"]  = recent["Close"].shift(lag)
         features[f"volume_lag_{lag}"] = recent["Volume"].shift(lag)
-    
+
+    # ── Merge VIX (forward-fill gaps for non-trading days / missing data) ─────
+    if not vix_series.empty:
+        features["vix"] = vix_series.reindex(features.index, method="ffill")
+
     # Drop NaN rows
     features = features.dropna()
-    
+
     if len(features) < 20:
         return None, None, None
-    
+
     # Target: next day's close price
     y = features["close"].shift(-1).dropna()
-    X = features.iloc[:-1]  # Remove last row since it has no target
-    
-    # Align X and y
+    X = features.iloc[:-1]   # drop last row (no target available)
     X = X.loc[y.index]
-    
+
     feature_names = X.columns.tolist()
-    
     return X.values, y.values, feature_names
 
 
@@ -80,16 +122,16 @@ def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, A
     try:
         from sklearn.ensemble import RandomForestRegressor
         
-        X, y, feature_names = prepare_features(df, lookback=60)
-        
+        X, y, feature_names = prepare_features(df, lookback=500)
+
         if X is None or len(X) < 20:
             return {"success": False, "error": "Insufficient data"}
-        
+
         # Train/test split (use last 20% for validation)
         split_idx = int(len(X) * 0.8)
         X_train, X_test = X[:split_idx], X[split_idx:]
         y_train, y_test = y[:split_idx], y[split_idx:]
-        
+
         # Train Random Forest
         rf_model = RandomForestRegressor(
             n_estimators=100,
@@ -142,16 +184,16 @@ def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[st
     try:
         from sklearn.ensemble import GradientBoostingRegressor
         
-        X, y, feature_names = prepare_features(df, lookback=60)
-        
+        X, y, feature_names = prepare_features(df, lookback=500)
+
         if X is None or len(X) < 20:
             return {"success": False, "error": "Insufficient data"}
-        
+
         # Train/test split
         split_idx = int(len(X) * 0.8)
         X_train, X_test = X[:split_idx], X[split_idx:]
         y_train, y_test = y[:split_idx], y[split_idx:]
-        
+
         # Train Gradient Boosting
         gb_model = GradientBoostingRegressor(
             n_estimators=100,
