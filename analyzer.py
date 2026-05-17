@@ -1210,27 +1210,30 @@ def analyzer_ui(TIINGO_TOKEN):
                 try:
                     from utils.tiingo_api import calculate_volume_profile
 
-                    # Calculate volume profile for last 30 days
-                    df_vp = df.tail(30).copy()
-                    vp_data = calculate_volume_profile(df_vp, num_bins=15)
+                    current_price = float(df['Close'].iloc[-1])
 
-                    if vp_data and 'price_levels' in vp_data:
-                        # Display key levels
+                    def _render_volume_profile(vp_data: dict, label: str):
+                        """Render one volume profile panel."""
+                        if not vp_data or 'price_levels' not in vp_data:
+                            st.info(f"{label}: data not available")
+                            return
+
+                        st.markdown(f"#### {label}")
                         col_vp1, col_vp2, col_vp3 = st.columns(3)
 
+                        poc_price = vp_data['poc_price']
+                        va_high   = vp_data['value_area_high']
+                        va_low    = vp_data['value_area_low']
+
                         with col_vp1:
-                            poc_price = vp_data['poc_price']
                             st.metric("Point of Control (POC)", f"${poc_price:.2f}")
                             st.caption("Price with highest volume")
 
                         with col_vp2:
-                            va_high = vp_data['value_area_high']
-                            va_low = vp_data['value_area_low']
-                            st.metric("Value Area", f"${va_low:.2f} - ${va_high:.2f}")
+                            st.metric("Value Area", f"${va_low:.2f} – ${va_high:.2f}")
                             st.caption("70% of volume traded here")
 
                         with col_vp3:
-                            current_price = df['Close'].iloc[-1]
                             if current_price > va_high:
                                 st.info("📈 Above Value Area")
                             elif current_price < va_low:
@@ -1239,30 +1242,45 @@ def analyzer_ui(TIINGO_TOKEN):
                                 st.success("✅ Inside Value Area")
 
                         # High Volume Nodes
-                        if 'hvn_levels' in vp_data and vp_data['hvn_levels']:
-                            st.markdown("### High Volume Nodes (Strong Support/Resistance)")
-
-                            for price, volume in vp_data['hvn_levels'][:5]:  # Top 5
-                                distance = ((price - current_price) / current_price) * 100
+                        if vp_data.get('hvn_levels'):
+                            st.markdown("**High Volume Nodes (Support / Resistance)**")
+                            for price, _vol in vp_data['hvn_levels'][:5]:
+                                distance   = ((price - current_price) / current_price) * 100
                                 level_type = "Resistance" if price > current_price else "Support"
-
-                                st.markdown(f"- **${price:.2f}** ({level_type}) - {distance:+.1f}% from current")
+                                st.markdown(f"- **${price:.2f}** ({level_type}) — {distance:+.1f}% from current")
 
                         # Interpretation
-                        st.markdown("### 💡 Interpretation")
-                        if current_price > poc_price:
-                            st.markdown(f"- Price is **above POC** (${poc_price:.2f}) - Bullish positioning")
-                        else:
-                            st.markdown(f"- Price is **below POC** (${poc_price:.2f}) - Bearish positioning")
+                        above_poc = current_price > poc_price
+                        st.markdown(
+                            f"💡 Price is **{'above' if above_poc else 'below'} POC** (${poc_price:.2f}) — "
+                            f"{'Bullish' if above_poc else 'Bearish'} positioning · "
+                            + (
+                                "inside Value Area (fair value zone)"
+                                if va_low <= current_price <= va_high
+                                else ("above Value Area — potentially overextended"
+                                      if current_price > va_high
+                                      else "below Value Area — potentially oversold")
+                            )
+                        )
 
-                        if va_low <= current_price <= va_high:
-                            st.markdown("- Price is **inside Value Area** - Fair value zone")
-                        elif current_price > va_high:
-                            st.markdown("- Price is **above Value Area** - Potentially overextended")
+                    # ── Calculate both profiles ──────────────────────────────
+                    available_bars = len(df)
+
+                    vp_30  = calculate_volume_profile(df.tail(30).copy(),  num_bins=15)
+                    vp_90  = calculate_volume_profile(df.tail(90).copy(),  num_bins=20) \
+                             if available_bars >= 60 else None
+
+                    # ── Display side-by-side ─────────────────────────────────
+                    col_left, col_right = st.columns(2)
+
+                    with col_left:
+                        _render_volume_profile(vp_30, "📅 30-Day Profile (Short-Term)")
+
+                    with col_right:
+                        if vp_90:
+                            _render_volume_profile(vp_90, "📆 90-Day Profile (Structural)")
                         else:
-                            st.markdown("- Price is **below Value Area** - Potentially oversold")
-                    else:
-                        st.info("Volume profile data not available")
+                            st.info("90-day profile requires at least 60 bars of history")
 
                 except Exception as e:
                     st.info(f"Volume profile analysis not available: {e}")
