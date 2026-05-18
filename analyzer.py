@@ -13,9 +13,6 @@ from utils.storage import load_json, save_json
 from utils.tiingo_api import get_next_earnings_date
 from utils.ml_models import ensemble_ml_forecast
 from news_feed import show_news_widget
-from utils.yahoo_fundamentals import (
-    get_yahoo_fundamentals, calculate_yahoo_fundamental_score
-)
 from utils.fundamentals import (
     get_fundamentals, get_tiingo_fundamentals_for_claude,
     calculate_fundamental_score, extract_key_metrics, format_large_number
@@ -38,9 +35,9 @@ def get_cached_stock_data(symbol: str, token: str, days: int = 504):
     return tiingo_history(symbol, token, days)
 
 @st.cache_data(ttl=300, show_spinner=False)
-def get_cached_fundamentals(symbol: str):
-    """Cache fundamental data for 5 minutes (Yahoo Finance)."""
-    return get_yahoo_fundamentals(symbol)
+def get_cached_fundamentals(symbol: str, token: str):
+    """Cache fundamental data for 5 minutes (Tiingo)."""
+    return get_tiingo_fundamentals_for_claude(symbol, token)
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_cached_earnings(symbol: str, token: str):
@@ -1031,36 +1028,52 @@ def analyzer_ui(TIINGO_TOKEN):
                 st.caption("Basic earnings information from Yahoo Finance")
 
                 try:
-                    # Get earnings info from Yahoo fundamentals
-                    earnings_info = get_yahoo_fundamentals(symbol)
+                    # Use Tiingo fundamentals flat dict for earnings / valuation metrics
+                    earnings_fund = get_tiingo_fundamentals_for_claude(symbol, TIINGO_TOKEN)
+                    real_earn_keys = {k for k in (earnings_fund or {}) if not k.startswith("_")}
 
-                    if earnings_info:
-                        # Display basic earnings metrics
+                    if earnings_fund and real_earn_keys:
                         col_earn1, col_earn2 = st.columns(2)
 
                         with col_earn1:
-                            st.markdown("**Earnings Metrics**")
-                            if "trailingEps" in earnings_info:
-                                st.markdown(f"- EPS (TTM): **${earnings_info['trailingEps']:.2f}**")
-                            if "forwardEps" in earnings_info:
-                                st.markdown(f"- Forward EPS: **${earnings_info['forwardEps']:.2f}**")
-                            if "earningsGrowth" in earnings_info:
-                                st.markdown(f"- Earnings Growth: **{earnings_info['earningsGrowth']*100:.1f}%**")
+                            st.markdown("**Earnings Metrics (Tiingo)**")
+                            eps = earnings_fund.get("eps")
+                            if eps is not None:
+                                st.markdown(f"- EPS (TTM): **${eps:.2f}**")
+                            pm = earnings_fund.get("profit_margin_pct")
+                            if pm is not None:
+                                st.markdown(f"- Net Margin: **{pm:.1f}%**")
+                            gm = earnings_fund.get("gross_margin_pct")
+                            if gm is not None:
+                                st.markdown(f"- Gross Margin: **{gm:.1f}%**")
+                            roe = earnings_fund.get("roe_pct")
+                            if roe is not None:
+                                st.markdown(f"- ROE: **{roe:.1f}%**")
 
                         with col_earn2:
-                            st.markdown("**Valuation**")
-                            if "trailingPE" in earnings_info:
-                                st.markdown(f"- P/E Ratio: **{earnings_info['trailingPE']:.2f}**")
-                            if "forwardPE" in earnings_info:
-                                st.markdown(f"- Forward P/E: **{earnings_info['forwardPE']:.2f}**")
-                            if "pegRatio" in earnings_info:
-                                st.markdown(f"- PEG Ratio: **{earnings_info['pegRatio']:.2f}**")
+                            st.markdown("**Valuation (Tiingo)**")
+                            pe = earnings_fund.get("pe_ratio")
+                            if pe is not None:
+                                st.markdown(f"- P/E Ratio: **{pe:.2f}**")
+                            pb = earnings_fund.get("pb_ratio")
+                            if pb is not None:
+                                st.markdown(f"- P/B Ratio: **{pb:.2f}**")
+                            peg = earnings_fund.get("trailing_peg")
+                            if peg is not None:
+                                st.markdown(f"- Trailing PEG: **{peg:.2f}**")
+                            ev = earnings_fund.get("enterprise_val")
+                            if ev is not None:
+                                st.markdown(f"- Enterprise Value: **{format_large_number(ev)}**")
 
-                        # Next earnings date
-                        if "nextEarningsDate" in earnings_info and earnings_info["nextEarningsDate"]:
-                            st.info(f"**Next Earnings**: {earnings_info['nextEarningsDate']}")
+                        # Next earnings date (from Tiingo calendar, already fetched separately)
+                        if earnings_date and earnings_date not in ("Not Scheduled", "N/A", None):
+                            st.info(f"📅 **Next Earnings**: {earnings_date}")
+                        quarter = earnings_fund.get("quarter")
+                        if quarter:
+                            st.caption(f"Statement data: {quarter} · via Tiingo")
                     else:
-                        st.info("Earnings information not available for this ticker")
+                        err = (earnings_fund or {}).get("_error", "")
+                        st.info(f"Earnings / valuation data not available for this ticker.{' ' + err if err else ''}")
 
                 except Exception as e:
                     st.warning(f"Could not load earnings data: {e}")

@@ -8,7 +8,6 @@ import requests
 import pandas as pd
 import streamlit as st
 from typing import Dict, Any, Optional
-import yfinance as yf
 
 
 @st.cache_data(ttl=86400, show_spinner=False)  # Cache for 24 hours
@@ -81,93 +80,19 @@ def get_daily_metrics(ticker: str, token: str) -> Optional[pd.DataFrame]:
         return None
 
 
-# Tiingo Power Plan fundamentals are restricted to these 30 tickers.
-# Full access requires contacting support@tiingo.com.
-TIINGO_FUNDAMENTALS_TICKERS = {
-    "AAPL", "AMGN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS", "DOW",
-    "GS", "HD", "HON", "IBM", "INTC", "JNJ", "JPM", "KO", "MCD", "MMM",
-    "MRK", "MSFT", "NKE", "PG", "TRV", "UNH", "V", "VZ", "WBA", "WMT",
-}
-
-
-def _get_yfinance_fundamentals(ticker: str) -> Dict[str, Any]:
-    """
-    Fetch fundamentals from Yahoo Finance and normalize them into the same
-    flat dict format used by get_tiingo_fundamentals_for_claude() so that
-    calculate_fundamental_score() works identically for both sources.
-    """
-    try:
-        info = yf.Ticker(ticker).info
-        if not info or info.get("quoteType") is None:
-            return {"_error": "Yahoo Finance returned no data for this ticker"}
-
-        rev   = info.get("totalRevenue") or 0
-        ni    = info.get("netIncomeToCommon") or 0
-        gp    = info.get("grossProfits") or 0
-        eq    = info.get("totalStockholderEquity") or 0
-        debt  = info.get("totalDebt") or 0
-        ca    = info.get("totalCurrentAssets") or 0
-        cl    = info.get("totalCurrentLiabilities") or 0
-
-        profit_margin_pct = round(ni / rev * 100, 1) if rev else (
-            info.get("profitMargins", 0) or 0) * 100
-        roe_pct = round(ni / eq * 100, 1) if eq else (
-            info.get("returnOnEquity", 0) or 0) * 100
-        gross_margin_pct = round(gp / rev * 100, 1) if rev else (
-            info.get("grossMargins", 0) or 0) * 100
-
-        # Yahoo returns D/E as a ratio × 100 (e.g. 45.6 means 0.456)
-        raw_de = info.get("debtToEquity") or 0
-        debt_to_equity = round(raw_de / 100, 2) if raw_de else (
-            round(debt / eq, 2) if eq else None)
-
-        current_ratio = info.get("currentRatio") or (
-            round(ca / cl, 2) if cl else None)
-
-        result = {
-            "_source": "Yahoo Finance",
-            "market_cap":        info.get("marketCap"),
-            "pe_ratio":          info.get("trailingPE") or info.get("forwardPE"),
-            "pb_ratio":          info.get("priceToBook"),
-            "revenue":           rev or None,
-            "gross_profit":      gp or None,
-            "net_income":        ni or None,
-            "eps":               info.get("trailingEps"),
-            "total_debt":        debt or None,
-            "total_equity":      eq or None,
-            "cash":              info.get("totalCash"),
-            "op_cash_flow":      info.get("operatingCashflow"),
-            "free_cash_flow":    info.get("freeCashflow"),
-            "profit_margin_pct": profit_margin_pct or None,
-            "gross_margin_pct":  gross_margin_pct or None,
-            "roe_pct":           roe_pct or None,
-            "debt_to_equity":    debt_to_equity,
-            "current_ratio":     current_ratio,
-        }
-        # Strip Nones so calculate_fundamental_score doesn't trip on them
-        return {k: v for k, v in result.items() if v is not None or k == "_source"}
-
-    except Exception as e:
-        return {"_error": f"Yahoo Finance error: {str(e)[:120]}"}
-
-
 @st.cache_data(ttl=86400, show_spinner=False)
 def get_tiingo_fundamentals_for_claude(ticker: str, token: str) -> Dict[str, Any]:
     """
     Fetch combined Tiingo fundamentals suitable for passing to Claude prompts.
 
     Pulls TWO endpoints and merges them:
-      1. /tiingo/fundamentals/<ticker>/daily  → P/E, P/B, market cap, enterprise value
+      1. /tiingo/fundamentals/<ticker>/daily      → P/E, P/B, market cap, enterprise value
       2. /tiingo/fundamentals/<ticker>/statements → revenue, net income, debt, cash, ROE, etc.
 
     Returns a flat dict.  On failure, returns a dict with an '_error' key describing
     the real reason (HTTP status, empty response, exception) so callers can surface
-    a meaningful message instead of a generic "requires Power Plan" warning.
+    a meaningful message instead of a generic warning.
     """
-    # Only DOW 30 tickers are available on the Tiingo Power Plan.
-    # For everything else, fall back to Yahoo Finance automatically.
-    if ticker.upper() not in TIINGO_FUNDAMENTALS_TICKERS:
-        return _get_yfinance_fundamentals(ticker)
 
     result: Dict[str, Any] = {}
     # Tiingo fundamentals endpoints require the token as a query param, not just a header
