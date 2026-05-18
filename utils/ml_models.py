@@ -52,7 +52,9 @@ def prepare_features(df: pd.DataFrame, lookback: int = 500) -> tuple:
     recent = df.tail(lookback).copy()
 
     # Normalise date index to timezone-naive dates for VIX merge
-    recent.index = pd.to_datetime(recent.index).normalize().tz_localize(None)
+    # Normalise to timezone-naive dates — handle both tz-aware and tz-naive indexes
+    idx = pd.to_datetime(recent.index).normalize()
+    recent.index = idx.tz_convert(None) if idx.tz is not None else idx
 
     # ── Fetch VIX aligned to the stock's date range ──────────────────────────
     start_str = recent.index[0].strftime("%Y-%m-%d")
@@ -96,9 +98,13 @@ def prepare_features(df: pd.DataFrame, lookback: int = 500) -> tuple:
         features[f"close_lag_{lag}"]  = recent["Close"].shift(lag)
         features[f"volume_lag_{lag}"] = recent["Volume"].shift(lag)
 
-    # ── Merge VIX (forward-fill gaps for non-trading days / missing data) ─────
+    # ── Merge VIX (forward-fill gaps; drop column if no overlap to avoid wiping rows) ─
     if not vix_series.empty:
-        features["vix"] = vix_series.reindex(features.index, method="ffill")
+        vix_aligned = vix_series.reindex(features.index, method="ffill")
+        if vix_aligned.notna().sum() >= len(features) * 0.5:
+            # Only add VIX if it covers at least half the rows; fill remaining NaN with median
+            features["vix"] = vix_aligned.fillna(vix_aligned.median())
+        # else: skip VIX silently — models train fine without it
 
     # Drop NaN rows
     features = features.dropna()

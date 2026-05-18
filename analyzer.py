@@ -1415,6 +1415,12 @@ def analyzer_ui(TIINGO_TOKEN):
                             st.warning("⚠️ **Low Agreement**: Models diverge - use caution")
                     else:
                         st.warning(f"ML forecast unavailable: {ml_forecast.get('error', 'Unknown error')}")
+                        rf_err = ml_forecast.get("rf_error")
+                        gb_err = ml_forecast.get("gb_error")
+                        if rf_err:
+                            st.caption(f"RF error: {rf_err}")
+                        if gb_err:
+                            st.caption(f"GB error: {gb_err}")
 
                 except Exception as e:
                     st.warning(f"Advanced ML forecast unavailable: {e}")
