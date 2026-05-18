@@ -25,7 +25,8 @@ def _fetch_vix_history(start_date: str, end_date: str) -> pd.Series:
         if hist.empty:
             return pd.Series(dtype=float)
         series = hist["Close"].copy()
-        series.index = pd.to_datetime(series.index).normalize().tz_localize(None)
+        idx = pd.to_datetime(series.index).normalize()
+        series.index = idx.tz_convert(None) if idx.tz is not None else idx
         series.name = "vix"
         return series
     except Exception:
@@ -106,19 +107,20 @@ def prepare_features(df: pd.DataFrame, lookback: int = 500) -> tuple:
             features["vix"] = vix_aligned.fillna(vix_aligned.median())
         # else: skip VIX silently — models train fine without it
 
-    # Drop NaN rows
-    features = features.dropna()
+    # Drop NaN rows then reset to a clean integer index to avoid DatetimeIndex
+    # expansion bugs when aligning X and y with .loc
+    features = features.dropna().reset_index(drop=True)
 
     if len(features) < 20:
         return None, None, None
 
-    # Target: next day's close price
-    y = features["close"].shift(-1).dropna()
-    X = features.iloc[:-1]   # drop last row (no target available)
-    X = X.loc[y.index]
+    # Target: next day's close (shift by -1, last row becomes NaN)
+    # Align X and y purely by position — drop the last row from both
+    y = features["close"].shift(-1).iloc[:-1].values   # shape (n-1,)
+    X = features.iloc[:-1].values                      # shape (n-1, n_features)
 
-    feature_names = X.columns.tolist()
-    return X.values, y.values, feature_names
+    feature_names = features.columns.tolist()
+    return X, y, feature_names
 
 
 def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, Any]:
