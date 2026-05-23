@@ -117,14 +117,52 @@ def prepare_features(df: pd.DataFrame, lookback: int = 500, days_ahead: int = 5)
     if len(features) < max(20, days_ahead + 1):
         return None, None, None
 
-    # Target: N-day forward return — predict directly, no scaling needed later.
-    # last `days_ahead` rows have no known future close, so drop them from both.
-    fwd_close  = features["close"].shift(-days_ahead)           # NaN for last N rows
-    fwd_return = (fwd_close / features["close"] - 1)           # fractional return
-    y = fwd_return.iloc[:-days_ahead].values                   # shape (n - N,)
-    X = features.iloc[:-days_ahead].values                     # shape (n - N, n_features)
+    # ── Target: N-day forward return (compute while close is still raw $) ────
+    # Must be done BEFORE normalization so the ratio uses real price values.
+    fwd_close  = features["close"].shift(-days_ahead)   # NaN for last N rows
+    fwd_return = fwd_close / features["close"] - 1      # fractional return
+    y = fwd_return.iloc[:-days_ahead].values             # shape (n - N,)
 
+    # ── Normalize features to dimensionless ratios ───────────────────────────
+    # Raw dollar prices drift by 20-80% over a 2-year training window.
+    # A model trained on absolute prices learns price level, not dynamics.
+    # Expressing every price feature as a ratio to the row's own close makes
+    # the features scale-invariant across stocks and across time.
+    c = features["close"]                                        # reference price
+
+    # Price features → ratio to current close (value of 0 means "at close")
+    for col in ["high", "low", "ma5", "ma10", "ma20"]:
+        if col in features.columns:
+            features[col] = features[col] / c - 1
+    for col in ["ema20", "ema50"]:
+        if col in features.columns:
+            features[col] = features[col] / c - 1
+    if "macd" in features.columns:
+        features["macd"] = features["macd"] / c          # MACD is in price units
+    if "volatility" in features.columns:
+        features["volatility"] = features["volatility"] / c   # relative std
+    for lag in [1, 2, 3, 5]:
+        col = f"close_lag_{lag}"
+        if col in features.columns:
+            features[col] = features[col] / c - 1        # N-day return to that lag
+
+    # Volume features → ratio to 20-day rolling mean volume
+    vol_ref = features["volume"].rolling(20, min_periods=5).mean().bfill()
+    features["volume"] = features["volume"] / vol_ref
+    for lag in [1, 2, 3, 5]:
+        col = f"volume_lag_{lag}"
+        if col in features.columns:
+            features[col] = features[col] / vol_ref
+
+    # Clean up any inf/NaN introduced by division (edge case: zero volume)
+    features = features.replace([np.inf, -np.inf], np.nan).fillna(0)
+
+    # Drop raw close — it is 1.0 everywhere after normalization (no information)
+    features = features.drop(columns=["close"])
+
+    # ── Build X (chronological order preserved — no shuffle) ─────────────────
     feature_names = features.columns.tolist()
+    X = features.iloc[:-days_ahead].values               # shape (n - N, n_features)
     return X, y, feature_names
 
 
@@ -142,11 +180,13 @@ def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, A
         if X is None or len(X) < 20:
             return {"success": False, "error": "Insufficient data"}
 
-        # Train/test split (use last 20% for validation)
+        # Chronological train/test split — first 80% trains, last 20% validates.
+        # No shuffle: shuffling a time series leaks future bars into training.
         split_idx = int(len(X) * 0.8)
         X_train, X_test = X[:split_idx], X[split_idx:]
         y_train, y_test = y[:split_idx], y[split_idx:]
 
+        # No feature scaling for RF — decision trees are scale-invariant.
         # Train Random Forest
         rf_model = RandomForestRegressor(
             n_estimators=100,
@@ -211,10 +251,19 @@ def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[st
         if X is None or len(X) < 20:
             return {"success": False, "error": "Insufficient data"}
 
-        # Train/test split
+        # Chronological train/test split — first 80% trains, last 20% validates.
+        # No shuffle: shuffling a time series leaks future bars into training.
         split_idx = int(len(X) * 0.8)
         X_train, X_test = X[:split_idx], X[split_idx:]
         y_train, y_test = y[:split_idx], y[split_idx:]
+
+        # Feature scaling for GB: StandardScaler fitted on train only.
+        # Fit on X_train → transform X_train, X_test, and final prediction row
+        # with the same parameters to prevent data leakage.
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+        X_train = scaler.fit_transform(X_train)
+        X_test  = scaler.transform(X_test)
 
         # Train Gradient Boosting
         gb_model = GradientBoostingRegressor(
@@ -231,8 +280,9 @@ def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[st
         train_score = gb_model.score(X_train, y_train)
         test_score  = float(np.clip(gb_model.score(X_test, y_test), 0.0, 1.0))
 
-        # Predict N-day forward return from the most-recent feature row
-        last_features    = X[-1].reshape(1, -1)
+        # Predict N-day forward return from the most-recent feature row.
+        # Apply the same scaler fitted on X_train — must NOT refit on this row.
+        last_features    = scaler.transform(X[-1].reshape(1, -1))
         predicted_return = float(gb_model.predict(last_features)[0])
 
         # Sanity cap: ±4% per day max (artifacts beyond this aren't credible)
