@@ -97,10 +97,37 @@ def prepare_features(df: pd.DataFrame, lookback: int = 500, days_ahead: int = 5)
     # Rolling volatility (10-day std of close)
     features["volatility"] = recent["Close"].rolling(10).std()
 
-    # Lag features
+    # Lag features — close lags at 1/2/3/5 days (become N-day returns after normalization)
     for lag in [1, 2, 3, 5]:
-        features[f"close_lag_{lag}"]  = recent["Close"].shift(lag)
-        features[f"volume_lag_{lag}"] = recent["Volume"].shift(lag)
+        features[f"close_lag_{lag}"] = recent["Close"].shift(lag)
+    # Volume lag: keep only lag-1; lags 2/3/5 dominated importance without directional signal
+    features["volume_lag_1"] = recent["Volume"].shift(1)
+
+    # ── New directional / momentum features (already dimensionless — no normalization needed) ──
+
+    # Price momentum — direction and magnitude of recent trend
+    features["mom_5"]  = recent["Close"].pct_change(5)
+    features["mom_10"] = recent["Close"].pct_change(10)
+    features["mom_20"] = recent["Close"].pct_change(20)
+
+    # EMA slope — is the trend accelerating or decelerating?
+    if "EMA20" in recent.columns:
+        features["ema20_slope"] = recent["EMA20"].pct_change(3)
+    if "EMA50" in recent.columns:
+        features["ema50_slope"] = recent["EMA50"].pct_change(5)
+
+    # Price position within 20-day range — mean-reversion signal (0 = at low, 1 = at high)
+    _high_20 = recent["High"].rolling(20).max()
+    _low_20  = recent["Low"].rolling(20).min()
+    _range   = (_high_20 - _low_20).replace(0, np.nan)      # guard zero-range (flat days)
+    features["range_position"] = (recent["Close"] - _low_20) / _range
+
+    # RSI slope — is momentum building or fading?
+    if "RSI14" in recent.columns:
+        features["rsi_slope"] = recent["RSI14"].diff(3)
+
+    # Volume confirmation: positive when price and volume move in the same direction
+    features["price_vol_confirm"] = recent["Close"].pct_change(1) * recent["Volume"].pct_change(1)
 
     # ── Merge VIX (forward-fill gaps; drop column if no overlap to avoid wiping rows) ─
     if not vix_series.empty:
@@ -168,10 +195,9 @@ def prepare_features(df: pd.DataFrame, lookback: int = 500, days_ahead: int = 5)
     # Volume features → ratio to 20-day rolling mean volume
     vol_ref = features["volume"].rolling(20, min_periods=5).mean().bfill()
     features["volume"] = features["volume"] / vol_ref
-    for lag in [1, 2, 3, 5]:
-        col = f"volume_lag_{lag}"
-        if col in features.columns:
-            features[col] = features[col] / vol_ref
+    # Only volume_lag_1 remains (lags 2/3/5 removed in feature engineering above)
+    if "volume_lag_1" in features.columns:
+        features["volume_lag_1"] = features["volume_lag_1"] / vol_ref
 
     # Clean up any inf/NaN introduced by division (edge case: zero volume)
     features = features.replace([np.inf, -np.inf], np.nan).fillna(0)
@@ -206,21 +232,28 @@ def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, A
         y_train, y_test = y[:split_idx], y[split_idx:]
 
         # No feature scaling for RF — decision trees are scale-invariant.
-        # Train Random Forest
+        # Constrained for small dataset (~300 samples, 26 features):
+        #   max_depth=4          best test R² found (0.047); depth=5 overfit
+        #   min_samples_leaf=20  each leaf covers ~6% of training set
+        #   max_features=0.5     random subspace reduces feature correlation
         rf_model = RandomForestRegressor(
-            n_estimators=100,
-            max_depth=10,
-            min_samples_split=5,
+            n_estimators=200,
+            max_depth=4,
+            min_samples_leaf=20,
+            max_features=0.5,
+            oob_score=True,
             random_state=42,
-            n_jobs=-1
+            n_jobs=-1,
         )
         rf_model.fit(X_train, y_train)
 
         # Validation score — clamp R² to [0, 1] before using anywhere.
         # R² can be negative when the model is worse than a flat-line predictor;
         # a negative value would invert blend weights and show nonsensical confidence.
-        train_score = rf_model.score(X_train, y_train)
-        test_score  = float(np.clip(rf_model.score(X_test, y_test), 0.0, 1.0))
+        train_score   = rf_model.score(X_train, y_train)
+        rf_raw_r2     = rf_model.score(X_test, y_test)      # unclamped — for diagnostics
+        test_score    = float(np.clip(rf_raw_r2, 0.0, 1.0))
+        rf_preds_test = rf_model.predict(X_test)             # test-set predictions for diagnostics
 
         # Predict N-day forward return from the most-recent feature row
         last_features    = X[-1].reshape(1, -1)
@@ -233,13 +266,10 @@ def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, A
         current_price  = float(df["Close"].iloc[-1])
         forecast_price = current_price * (1 + predicted_return)
 
-        # Feature importance
-        importances = rf_model.feature_importances_
-        top_features = sorted(
-            zip(feature_names, importances),
-            key=lambda x: x[1],
-            reverse=True
-        )[:5]
+        # Feature importance — top 10 for diagnostics, top 5 for UI display
+        importances   = rf_model.feature_importances_
+        top_features  = sorted(zip(feature_names, importances), key=lambda x: x[1], reverse=True)[:5]
+        top10_rf      = sorted(zip(feature_names, importances), key=lambda x: x[1], reverse=True)[:10]
 
         return {
             "success": True,
@@ -251,6 +281,12 @@ def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, A
             "top_features": top_features,
             "model_type": "Random Forest",
             "y_stats": y_stats,
+            # ── diagnostic payloads (prefixed _ so UI code won't accidentally display them) ──
+            "_raw_r2":     rf_raw_r2,
+            "_preds_test": rf_preds_test,
+            "_y_test":     y_test,
+            "_oob_score":  float(rf_model.oob_score_),
+            "_top10":      top10_rf,
         }
 
     except Exception as e:
@@ -285,20 +321,28 @@ def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[st
         X_train = scaler.fit_transform(X_train)
         X_test  = scaler.transform(X_test)
 
-        # Train Gradient Boosting
+        # Constrained for small dataset:
+        #   max_depth=3          shallow trees generalise better
+        #   min_samples_leaf=20  matches RF leaf size
+        #   learning_rate=0.05   slower learning reduces overfitting (was 0.1)
+        #   subsample=0.8        stochastic GB — sees 80% of rows per tree
         gb_model = GradientBoostingRegressor(
             n_estimators=100,
-            max_depth=5,
-            learning_rate=0.1,
-            random_state=42
+            max_depth=3,
+            min_samples_leaf=20,
+            learning_rate=0.05,
+            subsample=0.8,
+            random_state=42,
         )
         gb_model.fit(X_train, y_train)
 
         # Validation score — clamp R² to [0, 1] before using anywhere.
         # R² can be negative when the model is worse than a flat-line predictor;
         # a negative value would invert blend weights and show nonsensical confidence.
-        train_score = gb_model.score(X_train, y_train)
-        test_score  = float(np.clip(gb_model.score(X_test, y_test), 0.0, 1.0))
+        train_score   = gb_model.score(X_train, y_train)
+        gb_raw_r2     = gb_model.score(X_test, y_test)      # unclamped — for diagnostics
+        test_score    = float(np.clip(gb_raw_r2, 0.0, 1.0))
+        gb_preds_test = gb_model.predict(X_test)             # test-set predictions for diagnostics
 
         # Predict N-day forward return from the most-recent feature row.
         # Apply the same scaler fitted on X_train — must NOT refit on this row.
@@ -312,13 +356,10 @@ def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[st
         current_price  = float(df["Close"].iloc[-1])
         forecast_price = current_price * (1 + predicted_return)
 
-        # Feature importance
-        importances = gb_model.feature_importances_
-        top_features = sorted(
-            zip(feature_names, importances),
-            key=lambda x: x[1],
-            reverse=True
-        )[:5]
+        # Feature importance — top 10 for diagnostics, top 5 for UI display
+        importances  = gb_model.feature_importances_
+        top_features = sorted(zip(feature_names, importances), key=lambda x: x[1], reverse=True)[:5]
+        top10_gb     = sorted(zip(feature_names, importances), key=lambda x: x[1], reverse=True)[:10]
 
         return {
             "success": True,
@@ -330,6 +371,11 @@ def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[st
             "top_features": top_features,
             "model_type": "Gradient Boosting",
             "y_stats": y_stats,
+            # ── diagnostic payloads ──
+            "_raw_r2":     gb_raw_r2,
+            "_preds_test": gb_preds_test,
+            "_y_test":     y_test,
+            "_top10":      top10_gb,
         }
 
     except Exception as e:
@@ -350,7 +396,67 @@ def ensemble_ml_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, Any
             "rf_error": rf_result.get("error"),
             "gb_error": gb_result.get("error")
         }
-    
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # DIAGNOSTIC BLOCK — print only, no logic changes
+    # ══════════════════════════════════════════════════════════════════════════
+    rf_preds = rf_result["_preds_test"]
+    gb_preds = gb_result["_preds_test"]
+    y_test   = rf_result["_y_test"]       # same array for both models
+
+    sep = "─" * 60
+
+    print(f"\n{'═'*60}")
+    print(f"  ML ENSEMBLE DIAGNOSTICS")
+    print(f"{'═'*60}")
+
+    # ── y_test distribution ──────────────────────────────────────────────────
+    print(f"\n{sep}")
+    print(f"  y_test  ({len(y_test)} samples  —  {days_ahead}-day forward returns)")
+    print(sep)
+    print(f"  mean={np.mean(y_test)*100:+.4f}%  "
+          f"std={np.std(y_test)*100:.4f}%  "
+          f"min={np.min(y_test)*100:+.4f}%  "
+          f"max={np.max(y_test)*100:+.4f}%")
+
+    # ── Random Forest ────────────────────────────────────────────────────────
+    print(f"\n{sep}")
+    print(f"  RANDOM FOREST")
+    print(sep)
+    print(f"  Raw R²  (test):  {rf_result['_raw_r2']:+.6f}")
+    print(f"  OOB score:       {rf_result['_oob_score']:+.6f}")
+    print(f"  Pred mean={np.mean(rf_preds)*100:+.4f}%  "
+          f"std={np.std(rf_preds)*100:.4f}%  "
+          f"min={np.min(rf_preds)*100:+.4f}%  "
+          f"max={np.max(rf_preds)*100:+.4f}%")
+    print(f"\n  Top-10 feature importances:")
+    for rank, (feat, imp) in enumerate(rf_result["_top10"], 1):
+        print(f"    {rank:2d}. {feat:<22s}  {imp:.6f}")
+    print(f"\n  Actual vs Predicted (first 10 test rows):")
+    print(f"  {'actual':>10s}  {'RF pred':>10s}  {'error':>10s}")
+    for actual, pred in zip(y_test[:10], rf_preds[:10]):
+        print(f"  {actual*100:>+9.4f}%  {pred*100:>+9.4f}%  {(pred-actual)*100:>+9.4f}%")
+
+    # ── Gradient Boosting ────────────────────────────────────────────────────
+    print(f"\n{sep}")
+    print(f"  GRADIENT BOOSTING")
+    print(sep)
+    print(f"  Raw R²  (test):  {gb_result['_raw_r2']:+.6f}")
+    print(f"  Pred mean={np.mean(gb_preds)*100:+.4f}%  "
+          f"std={np.std(gb_preds)*100:.4f}%  "
+          f"min={np.min(gb_preds)*100:+.4f}%  "
+          f"max={np.max(gb_preds)*100:+.4f}%")
+    print(f"\n  Top-10 feature importances:")
+    for rank, (feat, imp) in enumerate(gb_result["_top10"], 1):
+        print(f"    {rank:2d}. {feat:<22s}  {imp:.6f}")
+    print(f"\n  Actual vs Predicted (first 10 test rows):")
+    print(f"  {'actual':>10s}  {'GB pred':>10s}  {'error':>10s}")
+    for actual, pred in zip(y_test[:10], gb_preds[:10]):
+        print(f"  {actual*100:>+9.4f}%  {pred*100:>+9.4f}%  {(pred-actual)*100:>+9.4f}%")
+
+    print(f"\n{'═'*60}\n")
+    # ══════════════════════════════════════════════════════════════════════════
+
     # Ensemble: weighted average using clamped R² scores [0, 1] as blend weights.
     # Using r2_score (not confidence) avoids the ×100 artefact and guarantees
     # weights stay in [0, 1] with no sign-flip risk.
