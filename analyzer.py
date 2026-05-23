@@ -1413,6 +1413,45 @@ def analyzer_ui(TIINGO_TOKEN):
                             st.info("ℹ️ **Moderate Agreement**: Models mostly agree - reasonable confidence")
                         else:
                             st.warning("⚠️ **Low Agreement**: Models diverge - use caution")
+
+                        # ── Target distribution diagnostics ──────────────────
+                        ys = ml_forecast.get("y_stats")
+                        if ys:
+                            with st.expander("🔬 Target Distribution Diagnostics", expanded=False):
+                                st.caption(
+                                    f"Training set: **{ys['n_samples']} samples** × "
+                                    f"**{ys['n_features']} features** | "
+                                    f"Target: {ys['days_ahead']}-day forward return"
+                                )
+                                dc1, dc2, dc3, dc4 = st.columns(4)
+                                dc1.metric("Mean return",  f"{ys['mean_pct']:+.2f}%")
+                                dc2.metric("Std dev",      f"{ys['std_pct']:.2f}%")
+                                dc3.metric("% Bullish",    f"{ys['pct_positive']:.0f}%")
+                                dc4.metric("% Capped",     f"{ys['pct_capped']:.1f}%",
+                                           help="% of training labels that hit the ±4%/day sanity cap")
+
+                                st.caption(
+                                    f"**Percentiles —** "
+                                    f"Min: {ys['min_pct']:+.2f}% | "
+                                    f"P25: {ys['p25_pct']:+.2f}% | "
+                                    f"Median: {ys['median_pct']:+.2f}% | "
+                                    f"P75: {ys['p75_pct']:+.2f}% | "
+                                    f"Max: {ys['max_pct']:+.2f}%"
+                                )
+
+                                # Plain-English interpretation
+                                bias = "bullish" if ys['mean_pct'] > 0.1 else "bearish" if ys['mean_pct'] < -0.1 else "neutral"
+                                cap_warn = (
+                                    f" ⚠️ {ys['pct_capped']:.0f}% of training labels were capped — "
+                                    "model may have seen clipped targets; widen cap if this exceeds 5%."
+                                    if ys['pct_capped'] > 5 else ""
+                                )
+                                st.caption(
+                                    f"The training target distribution is **{bias}** "
+                                    f"(avg {ys['mean_pct']:+.2f}% over {ys['days_ahead']} days, "
+                                    f"σ = {ys['std_pct']:.2f}%).{cap_warn}"
+                                )
+
                     else:
                         st.warning(f"ML forecast unavailable: {ml_forecast.get('error', 'Unknown error')}")
                         rf_err = ml_forecast.get("rf_error")

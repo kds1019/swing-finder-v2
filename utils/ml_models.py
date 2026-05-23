@@ -51,7 +51,7 @@ def prepare_features(df: pd.DataFrame, lookback: int = 500, days_ahead: int = 5)
     - VIX (market fear index) — aligned by date via Yahoo Finance
     """
     if len(df) < _MIN_BARS:
-        return None, None, None
+        return None, None, None, None
 
     recent = df.tail(lookback).copy()
 
@@ -115,13 +115,32 @@ def prepare_features(df: pd.DataFrame, lookback: int = 500, days_ahead: int = 5)
     features = features.dropna().reset_index(drop=True)
 
     if len(features) < max(20, days_ahead + 1):
-        return None, None, None
+        return None, None, None, None
 
     # ── Target: N-day forward return (compute while close is still raw $) ────
     # Must be done BEFORE normalization so the ratio uses real price values.
     fwd_close  = features["close"].shift(-days_ahead)   # NaN for last N rows
     fwd_return = fwd_close / features["close"] - 1      # fractional return
     y = fwd_return.iloc[:-days_ahead].values             # shape (n - N,)
+
+    # ── Target distribution diagnostics ─────────────────────────────────────
+    # Computed here, before normalization changes the features, so y is still
+    # the raw forward-return array in fractional form.
+    _cap = 0.04 * days_ahead                             # sanity cap threshold
+    y_stats = {
+        "n_samples":    int(len(y)),
+        "n_features":   int(features.shape[1] - 1),     # -1: close not yet dropped
+        "mean_pct":     round(float(np.mean(y))   * 100, 3),
+        "std_pct":      round(float(np.std(y))    * 100, 3),
+        "min_pct":      round(float(np.min(y))    * 100, 3),
+        "p25_pct":      round(float(np.percentile(y, 25)) * 100, 3),
+        "median_pct":   round(float(np.median(y)) * 100, 3),
+        "p75_pct":      round(float(np.percentile(y, 75)) * 100, 3),
+        "max_pct":      round(float(np.max(y))    * 100, 3),
+        "pct_positive": round(float(np.mean(y > 0)) * 100, 1),
+        "pct_capped":   round(float(np.mean(np.abs(y) >= _cap)) * 100, 1),
+        "days_ahead":   days_ahead,
+    }
 
     # ── Normalize features to dimensionless ratios ───────────────────────────
     # Raw dollar prices drift by 20-80% over a 2-year training window.
@@ -163,7 +182,7 @@ def prepare_features(df: pd.DataFrame, lookback: int = 500, days_ahead: int = 5)
     # ── Build X (chronological order preserved — no shuffle) ─────────────────
     feature_names = features.columns.tolist()
     X = features.iloc[:-days_ahead].values               # shape (n - N, n_features)
-    return X, y, feature_names
+    return X, y, feature_names, y_stats
 
 
 def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, Any]:
@@ -175,7 +194,7 @@ def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, A
     try:
         from sklearn.ensemble import RandomForestRegressor
 
-        X, y, feature_names = prepare_features(df, lookback=500, days_ahead=days_ahead)
+        X, y, feature_names, y_stats = prepare_features(df, lookback=500, days_ahead=days_ahead)
 
         if X is None or len(X) < 20:
             return {"success": False, "error": "Insufficient data"}
@@ -230,7 +249,8 @@ def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, A
             "confidence": round(test_score * 100, 1),               # display-only percentage
             "train_score": round(float(np.clip(train_score, 0.0, 1.0)) * 100, 1),
             "top_features": top_features,
-            "model_type": "Random Forest"
+            "model_type": "Random Forest",
+            "y_stats": y_stats,
         }
 
     except Exception as e:
@@ -246,7 +266,7 @@ def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[st
     try:
         from sklearn.ensemble import GradientBoostingRegressor
 
-        X, y, feature_names = prepare_features(df, lookback=500, days_ahead=days_ahead)
+        X, y, feature_names, y_stats = prepare_features(df, lookback=500, days_ahead=days_ahead)
 
         if X is None or len(X) < 20:
             return {"success": False, "error": "Insufficient data"}
@@ -308,7 +328,8 @@ def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[st
             "confidence": round(test_score * 100, 1),               # display-only percentage
             "train_score": round(float(np.clip(train_score, 0.0, 1.0)) * 100, 1),
             "top_features": top_features,
-            "model_type": "Gradient Boosting"
+            "model_type": "Gradient Boosting",
+            "y_stats": y_stats,
         }
 
     except Exception as e:
@@ -363,6 +384,7 @@ def ensemble_ml_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, Any
         "gb_prediction": gb_result["forecast_price"],
         "rf_confidence": rf_result["confidence"],
         "gb_confidence": gb_result["confidence"],
-        "agreement": round(abs(rf_result["forecast_price"] - gb_result["forecast_price"]) / ensemble_price * 100, 1)
+        "agreement": round(abs(rf_result["forecast_price"] - gb_result["forecast_price"]) / ensemble_price * 100, 1),
+        "y_stats": rf_result.get("y_stats"),   # same data for both models; RF copy forwarded
     }
 
