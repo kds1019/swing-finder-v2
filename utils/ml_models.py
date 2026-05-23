@@ -33,10 +33,13 @@ def _fetch_vix_history(start_date: str, end_date: str) -> pd.Series:
         return pd.Series(dtype=float)
 
 
-def prepare_features(df: pd.DataFrame, lookback: int = 500) -> tuple:
+def prepare_features(df: pd.DataFrame, lookback: int = 500, days_ahead: int = 5) -> tuple:
     """
     Prepare features for ML models using up to `lookback` bars of history.
     Returns (X, y, feature_names).
+
+    Target: `days_ahead`-period forward return  (close[t+N]/close[t] - 1).
+    The model predicts this return directly — no post-hoc scaling is applied.
 
     Features include:
     - OHLCV raw values
@@ -111,13 +114,15 @@ def prepare_features(df: pd.DataFrame, lookback: int = 500) -> tuple:
     # expansion bugs when aligning X and y with .loc
     features = features.dropna().reset_index(drop=True)
 
-    if len(features) < 20:
+    if len(features) < max(20, days_ahead + 1):
         return None, None, None
 
-    # Target: next day's close (shift by -1, last row becomes NaN)
-    # Align X and y purely by position — drop the last row from both
-    y = features["close"].shift(-1).iloc[:-1].values   # shape (n-1,)
-    X = features.iloc[:-1].values                      # shape (n-1, n_features)
+    # Target: N-day forward return — predict directly, no scaling needed later.
+    # last `days_ahead` rows have no known future close, so drop them from both.
+    fwd_close  = features["close"].shift(-days_ahead)           # NaN for last N rows
+    fwd_return = (fwd_close / features["close"] - 1)           # fractional return
+    y = fwd_return.iloc[:-days_ahead].values                   # shape (n - N,)
+    X = features.iloc[:-days_ahead].values                     # shape (n - N, n_features)
 
     feature_names = features.columns.tolist()
     return X, y, feature_names
@@ -126,11 +131,13 @@ def prepare_features(df: pd.DataFrame, lookback: int = 500) -> tuple:
 def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, Any]:
     """
     Use Random Forest to forecast future prices.
+    Target is the `days_ahead`-period forward return predicted directly —
+    no linear/compound scaling applied after prediction.
     """
     try:
         from sklearn.ensemble import RandomForestRegressor
-        
-        X, y, feature_names = prepare_features(df, lookback=500)
+
+        X, y, feature_names = prepare_features(df, lookback=500, days_ahead=days_ahead)
 
         if X is None or len(X) < 20:
             return {"success": False, "error": "Insufficient data"}
@@ -149,20 +156,22 @@ def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, A
             n_jobs=-1
         )
         rf_model.fit(X_train, y_train)
-        
+
         # Validation score
         train_score = rf_model.score(X_train, y_train)
-        test_score = rf_model.score(X_test, y_test)
-        
-        # Predict next day
-        last_features = X[-1].reshape(1, -1)
-        next_day_pred = rf_model.predict(last_features)[0]
-        
-        # Simple projection for days_ahead
-        current_price = df["Close"].iloc[-1]
-        daily_change = (next_day_pred - current_price) / current_price
-        forecast_price = current_price * (1 + daily_change * days_ahead)
-        
+        test_score  = rf_model.score(X_test, y_test)
+
+        # Predict N-day forward return from the most-recent feature row
+        last_features    = X[-1].reshape(1, -1)
+        predicted_return = float(rf_model.predict(last_features)[0])
+
+        # Sanity cap: ±4% per day max (artifacts beyond this aren't credible)
+        max_move         = 0.04 * days_ahead
+        predicted_return = float(np.clip(predicted_return, -max_move, max_move))
+
+        current_price  = float(df["Close"].iloc[-1])
+        forecast_price = current_price * (1 + predicted_return)
+
         # Feature importance
         importances = rf_model.feature_importances_
         top_features = sorted(
@@ -170,17 +179,17 @@ def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, A
             key=lambda x: x[1],
             reverse=True
         )[:5]
-        
+
         return {
             "success": True,
             "forecast_price": round(forecast_price, 2),
-            "next_day_price": round(next_day_pred, 2),
+            "predicted_return": round(predicted_return * 100, 2),   # % for display
             "confidence": round(test_score * 100, 1),
             "train_score": round(train_score * 100, 1),
             "top_features": top_features,
             "model_type": "Random Forest"
         }
-        
+
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -188,11 +197,13 @@ def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, A
 def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, Any]:
     """
     Use Gradient Boosting to forecast future prices.
+    Target is the `days_ahead`-period forward return predicted directly —
+    no linear/compound scaling applied after prediction.
     """
     try:
         from sklearn.ensemble import GradientBoostingRegressor
-        
-        X, y, feature_names = prepare_features(df, lookback=500)
+
+        X, y, feature_names = prepare_features(df, lookback=500, days_ahead=days_ahead)
 
         if X is None or len(X) < 20:
             return {"success": False, "error": "Insufficient data"}
@@ -210,20 +221,22 @@ def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[st
             random_state=42
         )
         gb_model.fit(X_train, y_train)
-        
+
         # Validation score
         train_score = gb_model.score(X_train, y_train)
-        test_score = gb_model.score(X_test, y_test)
-        
-        # Predict next day
-        last_features = X[-1].reshape(1, -1)
-        next_day_pred = gb_model.predict(last_features)[0]
-        
-        # Simple projection for days_ahead
-        current_price = df["Close"].iloc[-1]
-        daily_change = (next_day_pred - current_price) / current_price
-        forecast_price = current_price * (1 + daily_change * days_ahead)
-        
+        test_score  = gb_model.score(X_test, y_test)
+
+        # Predict N-day forward return from the most-recent feature row
+        last_features    = X[-1].reshape(1, -1)
+        predicted_return = float(gb_model.predict(last_features)[0])
+
+        # Sanity cap: ±4% per day max (artifacts beyond this aren't credible)
+        max_move         = 0.04 * days_ahead
+        predicted_return = float(np.clip(predicted_return, -max_move, max_move))
+
+        current_price  = float(df["Close"].iloc[-1])
+        forecast_price = current_price * (1 + predicted_return)
+
         # Feature importance
         importances = gb_model.feature_importances_
         top_features = sorted(
@@ -231,17 +244,17 @@ def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[st
             key=lambda x: x[1],
             reverse=True
         )[:5]
-        
+
         return {
             "success": True,
             "forecast_price": round(forecast_price, 2),
-            "next_day_price": round(next_day_pred, 2),
+            "predicted_return": round(predicted_return * 100, 2),   # % for display
             "confidence": round(test_score * 100, 1),
             "train_score": round(train_score * 100, 1),
             "top_features": top_features,
             "model_type": "Gradient Boosting"
         }
-        
+
     except Exception as e:
         return {"success": False, "error": str(e)}
 
