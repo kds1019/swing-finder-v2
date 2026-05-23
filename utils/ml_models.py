@@ -157,9 +157,11 @@ def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, A
         )
         rf_model.fit(X_train, y_train)
 
-        # Validation score
+        # Validation score — clamp R² to [0, 1] before using anywhere.
+        # R² can be negative when the model is worse than a flat-line predictor;
+        # a negative value would invert blend weights and show nonsensical confidence.
         train_score = rf_model.score(X_train, y_train)
-        test_score  = rf_model.score(X_test, y_test)
+        test_score  = float(np.clip(rf_model.score(X_test, y_test), 0.0, 1.0))
 
         # Predict N-day forward return from the most-recent feature row
         last_features    = X[-1].reshape(1, -1)
@@ -184,8 +186,9 @@ def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, A
             "success": True,
             "forecast_price": round(forecast_price, 2),
             "predicted_return": round(predicted_return * 100, 2),   # % for display
-            "confidence": round(test_score * 100, 1),
-            "train_score": round(train_score * 100, 1),
+            "r2_score": test_score,                                 # raw clamped R² for weighting
+            "confidence": round(test_score * 100, 1),               # display-only percentage
+            "train_score": round(float(np.clip(train_score, 0.0, 1.0)) * 100, 1),
             "top_features": top_features,
             "model_type": "Random Forest"
         }
@@ -222,9 +225,11 @@ def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[st
         )
         gb_model.fit(X_train, y_train)
 
-        # Validation score
+        # Validation score — clamp R² to [0, 1] before using anywhere.
+        # R² can be negative when the model is worse than a flat-line predictor;
+        # a negative value would invert blend weights and show nonsensical confidence.
         train_score = gb_model.score(X_train, y_train)
-        test_score  = gb_model.score(X_test, y_test)
+        test_score  = float(np.clip(gb_model.score(X_test, y_test), 0.0, 1.0))
 
         # Predict N-day forward return from the most-recent feature row
         last_features    = X[-1].reshape(1, -1)
@@ -249,8 +254,9 @@ def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[st
             "success": True,
             "forecast_price": round(forecast_price, 2),
             "predicted_return": round(predicted_return * 100, 2),   # % for display
-            "confidence": round(test_score * 100, 1),
-            "train_score": round(train_score * 100, 1),
+            "r2_score": test_score,                                 # raw clamped R² for weighting
+            "confidence": round(test_score * 100, 1),               # display-only percentage
+            "train_score": round(float(np.clip(train_score, 0.0, 1.0)) * 100, 1),
             "top_features": top_features,
             "model_type": "Gradient Boosting"
         }
@@ -274,13 +280,23 @@ def ensemble_ml_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, Any
             "gb_error": gb_result.get("error")
         }
     
-    # Ensemble: weighted average based on confidence
-    rf_weight = rf_result["confidence"] / (rf_result["confidence"] + gb_result["confidence"])
-    gb_weight = gb_result["confidence"] / (rf_result["confidence"] + gb_result["confidence"])
-    
-    ensemble_price = (rf_result["forecast_price"] * rf_weight + 
-                     gb_result["forecast_price"] * gb_weight)
-    
+    # Ensemble: weighted average using clamped R² scores [0, 1] as blend weights.
+    # Using r2_score (not confidence) avoids the ×100 artefact and guarantees
+    # weights stay in [0, 1] with no sign-flip risk.
+    rf_r2 = rf_result["r2_score"]   # already clamped to [0, 1]
+    gb_r2 = gb_result["r2_score"]
+    total_r2 = rf_r2 + gb_r2
+
+    if total_r2 < 1e-9:
+        # Both models performed at chance level — fall back to equal weighting
+        rf_weight = gb_weight = 0.5
+    else:
+        rf_weight = rf_r2 / total_r2
+        gb_weight = gb_r2 / total_r2
+
+    ensemble_price = (rf_result["forecast_price"] * rf_weight +
+                      gb_result["forecast_price"] * gb_weight)
+
     ensemble_confidence = (rf_result["confidence"] + gb_result["confidence"]) / 2
     
     # Prediction range
