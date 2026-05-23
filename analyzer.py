@@ -198,10 +198,10 @@ def analyzer_ui(TIINGO_TOKEN):
 
     if run_analysis:
         # 🚀 MOBILE OPTIMIZATION: Use cached data to prevent re-fetching
-        # Fetch up to 2500 bars (~10 years) for ML training; chart still displays last 90 days.
+        # Fetch up to 1500 bars (~6 years) for ML training; chart still displays last 90 days.
         # tiingo_history returns however many bars are available if the ticker has less history.
         with st.spinner("📊 Loading data..."):
-            df = get_cached_stock_data(symbol, TIINGO_TOKEN, 2500)
+            df = get_cached_stock_data(symbol, TIINGO_TOKEN, 1500)
 
         if df is None or df.empty:
             st.warning("⚠️ No historical data returned for this ticker.")
