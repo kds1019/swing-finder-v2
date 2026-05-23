@@ -33,9 +33,11 @@ def _fetch_vix_history(start_date: str, end_date: str) -> pd.Series:
         return pd.Series(dtype=float)
 
 
-def prepare_features(df: pd.DataFrame, lookback: int = 500, days_ahead: int = 5) -> tuple:
+def prepare_features(df: pd.DataFrame, lookback: int = 2500, days_ahead: int = 5) -> tuple:
     """
     Prepare features for ML models using up to `lookback` bars of history.
+    Default is 2500 bars (~10 years of trading days); uses all available rows
+    if the DataFrame is shorter than lookback.
     Returns (X, y, feature_names).
 
     Target: `days_ahead`-period forward return  (close[t+N]/close[t] - 1).
@@ -220,7 +222,7 @@ def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, A
     try:
         from sklearn.ensemble import RandomForestRegressor
 
-        X, y, feature_names, y_stats = prepare_features(df, lookback=500, days_ahead=days_ahead)
+        X, y, feature_names, y_stats = prepare_features(df, lookback=2500, days_ahead=days_ahead)
 
         if X is None or len(X) < 20:
             return {"success": False, "error": "Insufficient data"}
@@ -302,7 +304,7 @@ def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[st
     try:
         from sklearn.ensemble import GradientBoostingRegressor
 
-        X, y, feature_names, y_stats = prepare_features(df, lookback=500, days_ahead=days_ahead)
+        X, y, feature_names, y_stats = prepare_features(df, lookback=2500, days_ahead=days_ahead)
 
         if X is None or len(X) < 20:
             return {"success": False, "error": "Insufficient data"}
