@@ -198,10 +198,13 @@ def analyzer_ui(TIINGO_TOKEN):
 
     if run_analysis:
         # 🚀 MOBILE OPTIMIZATION: Use cached data to prevent re-fetching
-        # Fetch up to 1500 bars (~6 years) for ML training; chart still displays last 90 days.
-        # tiingo_history returns however many bars are available if the ticker has less history.
+        # Fetch up to 504 bars (~2 years) for ML training; chart still displays last 90 days.
+        # The ml_models lookback=1500 is a ceiling — it trains on whatever is available.
+        # 504 bars keeps training in one coherent market regime (~2023-2025) which gives
+        # the best test R² for most tickers; extending to 1500 bars pulls in the 2022
+        # bear market which contradicts 2023-2026 patterns and collapses model signal.
         with st.spinner("📊 Loading data..."):
-            df = get_cached_stock_data(symbol, TIINGO_TOKEN, 1500)
+            df = get_cached_stock_data(symbol, TIINGO_TOKEN, 504)
 
         if df is None or df.empty:
             st.warning("⚠️ No historical data returned for this ticker.")

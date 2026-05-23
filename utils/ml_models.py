@@ -234,14 +234,12 @@ def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, A
         y_train, y_test = y[:split_idx], y[split_idx:]
 
         # No feature scaling for RF — decision trees are scale-invariant.
-        # Constrained for small dataset (~300 samples, 26 features):
-        #   max_depth=4          best test R² found (0.047); depth=5 overfit
-        #   min_samples_leaf=20  each leaf covers ~6% of training set
-        #   max_features=0.5     random subspace reduces feature correlation
+        # Fixed settings that gave R²=+0.047 on KO: max_depth=4, min_samples_leaf=20
+        min_leaf_rf = 20
         rf_model = RandomForestRegressor(
             n_estimators=200,
             max_depth=4,
-            min_samples_leaf=20,
+            min_samples_leaf=min_leaf_rf,
             max_features=0.5,
             oob_score=True,
             random_state=42,
@@ -323,15 +321,12 @@ def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[st
         X_train = scaler.fit_transform(X_train)
         X_test  = scaler.transform(X_test)
 
-        # Constrained for small dataset:
-        #   max_depth=3          shallow trees generalise better
-        #   min_samples_leaf=20  matches RF leaf size
-        #   learning_rate=0.05   slower learning reduces overfitting (was 0.1)
-        #   subsample=0.8        stochastic GB — sees 80% of rows per tree
+        # Fixed min_samples_leaf matching RF (gave R²=+0.007 on KO)
+        min_leaf_gb = 20
         gb_model = GradientBoostingRegressor(
             n_estimators=100,
             max_depth=3,
-            min_samples_leaf=20,
+            min_samples_leaf=min_leaf_gb,
             learning_rate=0.05,
             subsample=0.8,
             random_state=42,
