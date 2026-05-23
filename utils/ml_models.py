@@ -247,13 +247,25 @@ def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, A
         )
         rf_model.fit(X_train, y_train)
 
-        # Validation score — clamp R² to [0, 1] before using anywhere.
-        # R² can be negative when the model is worse than a flat-line predictor;
-        # a negative value would invert blend weights and show nonsensical confidence.
+        # ── Validation scores ────────────────────────────────────────────────────
         train_score   = rf_model.score(X_train, y_train)
-        rf_raw_r2     = rf_model.score(X_test, y_test)      # unclamped — for diagnostics
-        test_score    = float(np.clip(rf_raw_r2, 0.0, 1.0))
-        rf_preds_test = rf_model.predict(X_test)             # test-set predictions for diagnostics
+        rf_raw_r2     = rf_model.score(X_test, y_test)      # unclamped — kept for diagnostics
+        # Clamp R² to [0,1] only for blend-weight use; negative R² is still logged above.
+        r2_clamped    = float(np.clip(rf_raw_r2, 0.0, 1.0))
+        rf_preds_test = rf_model.predict(X_test)
+
+        # ── Directional accuracy ─────────────────────────────────────────────
+        # What fraction of test-set direction calls (up/down) were correct?
+        # This is meaningful even when R² is slightly negative — a model that
+        # calls direction correctly 55% of the time provides a real edge.
+        pct_correct_dir = float(np.mean(np.sign(rf_preds_test) == np.sign(y_test)))
+
+        # Confidence: directional accuracy above the 50%-random baseline, scaled to 0-25%.
+        # R² acts as a multiplier: positive R² amplifies the signal; negative R² dampens
+        # it (floor 0.3×) so a structurally broken model still shows reduced — not zero — confidence.
+        dir_conf  = max(pct_correct_dir - 0.5, 0.0) * 50.0          # 0–25 %
+        r2_adj    = max(1.0 + rf_raw_r2 * 5.0, 0.3)                 # 0.3–∞ multiplier
+        confidence = round(dir_conf * r2_adj, 1)
 
         # Predict N-day forward return from the most-recent feature row
         last_features    = X[-1].reshape(1, -1)
@@ -275,18 +287,19 @@ def random_forest_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, A
             "success": True,
             "forecast_price": round(forecast_price, 2),
             "predicted_return": round(predicted_return * 100, 2),   # % for display
-            "r2_score": test_score,                                 # raw clamped R² for weighting
-            "confidence": round(test_score * 100, 1),               # display-only percentage
+            "r2_score": r2_clamped,                                 # clamped R² — used for blend weights
+            "confidence": confidence,                               # directional-accuracy based
             "train_score": round(float(np.clip(train_score, 0.0, 1.0)) * 100, 1),
             "top_features": top_features,
             "model_type": "Random Forest",
             "y_stats": y_stats,
-            # ── diagnostic payloads (prefixed _ so UI code won't accidentally display them) ──
-            "_raw_r2":     rf_raw_r2,
-            "_preds_test": rf_preds_test,
-            "_y_test":     y_test,
-            "_oob_score":  float(rf_model.oob_score_),
-            "_top10":      top10_rf,
+            # ── diagnostic payloads (prefixed _ — not displayed in UI) ──────
+            "_raw_r2":          rf_raw_r2,
+            "_preds_test":      rf_preds_test,
+            "_y_test":          y_test,
+            "_oob_score":       float(rf_model.oob_score_),
+            "_top10":           top10_rf,
+            "_pct_correct_dir": pct_correct_dir,
         }
 
     except Exception as e:
@@ -333,13 +346,19 @@ def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[st
         )
         gb_model.fit(X_train, y_train)
 
-        # Validation score — clamp R² to [0, 1] before using anywhere.
-        # R² can be negative when the model is worse than a flat-line predictor;
-        # a negative value would invert blend weights and show nonsensical confidence.
+        # ── Validation scores ────────────────────────────────────────────────────
         train_score   = gb_model.score(X_train, y_train)
-        gb_raw_r2     = gb_model.score(X_test, y_test)      # unclamped — for diagnostics
-        test_score    = float(np.clip(gb_raw_r2, 0.0, 1.0))
-        gb_preds_test = gb_model.predict(X_test)             # test-set predictions for diagnostics
+        gb_raw_r2     = gb_model.score(X_test, y_test)      # unclamped — kept for diagnostics
+        r2_clamped    = float(np.clip(gb_raw_r2, 0.0, 1.0))
+        gb_preds_test = gb_model.predict(X_test)
+
+        # ── Directional accuracy ─────────────────────────────────────────────
+        pct_correct_dir = float(np.mean(np.sign(gb_preds_test) == np.sign(y_test)))
+
+        # Same confidence formula as RF: directional accuracy + R² multiplier
+        dir_conf  = max(pct_correct_dir - 0.5, 0.0) * 50.0
+        r2_adj    = max(1.0 + gb_raw_r2 * 5.0, 0.3)
+        confidence = round(dir_conf * r2_adj, 1)
 
         # Predict N-day forward return from the most-recent feature row.
         # Apply the same scaler fitted on X_train — must NOT refit on this row.
@@ -362,17 +381,18 @@ def gradient_boosting_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[st
             "success": True,
             "forecast_price": round(forecast_price, 2),
             "predicted_return": round(predicted_return * 100, 2),   # % for display
-            "r2_score": test_score,                                 # raw clamped R² for weighting
-            "confidence": round(test_score * 100, 1),               # display-only percentage
+            "r2_score": r2_clamped,                                 # clamped R² — used for blend weights
+            "confidence": confidence,                               # directional-accuracy based
             "train_score": round(float(np.clip(train_score, 0.0, 1.0)) * 100, 1),
             "top_features": top_features,
             "model_type": "Gradient Boosting",
             "y_stats": y_stats,
-            # ── diagnostic payloads ──
-            "_raw_r2":     gb_raw_r2,
-            "_preds_test": gb_preds_test,
-            "_y_test":     y_test,
-            "_top10":      top10_gb,
+            # ── diagnostic payloads ──────────────────────────────────────────
+            "_raw_r2":          gb_raw_r2,
+            "_preds_test":      gb_preds_test,
+            "_y_test":          y_test,
+            "_top10":           top10_gb,
+            "_pct_correct_dir": pct_correct_dir,
         }
 
     except Exception as e:
@@ -420,8 +440,10 @@ def ensemble_ml_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, Any
     print(f"\n{sep}")
     print(f"  RANDOM FOREST")
     print(sep)
-    print(f"  Raw R²  (test):  {rf_result['_raw_r2']:+.6f}")
+    print(f"  Raw R²  (test):  {rf_result['_raw_r2']:+.6f}  {'✓ positive' if rf_result['_raw_r2'] > 0 else '✗ negative (model worse than mean)'}")
     print(f"  OOB score:       {rf_result['_oob_score']:+.6f}")
+    print(f"  Dir accuracy:    {rf_result['_pct_correct_dir']*100:.1f}%  (>50% = beats random)")
+    print(f"  Confidence:      {rf_result['confidence']:.1f}%  (dir-accuracy based, R²-adjusted)")
     print(f"  Pred mean={np.mean(rf_preds)*100:+.4f}%  "
           f"std={np.std(rf_preds)*100:.4f}%  "
           f"min={np.min(rf_preds)*100:+.4f}%  "
@@ -438,7 +460,9 @@ def ensemble_ml_forecast(df: pd.DataFrame, days_ahead: int = 5) -> Dict[str, Any
     print(f"\n{sep}")
     print(f"  GRADIENT BOOSTING")
     print(sep)
-    print(f"  Raw R²  (test):  {gb_result['_raw_r2']:+.6f}")
+    print(f"  Raw R²  (test):  {gb_result['_raw_r2']:+.6f}  {'✓ positive' if gb_result['_raw_r2'] > 0 else '✗ negative (model worse than mean)'}")
+    print(f"  Dir accuracy:    {gb_result['_pct_correct_dir']*100:.1f}%  (>50% = beats random)")
+    print(f"  Confidence:      {gb_result['confidence']:.1f}%  (dir-accuracy based, R²-adjusted)")
     print(f"  Pred mean={np.mean(gb_preds)*100:+.4f}%  "
           f"std={np.std(gb_preds)*100:.4f}%  "
           f"min={np.min(gb_preds)*100:+.4f}%  "
