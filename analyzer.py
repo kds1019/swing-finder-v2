@@ -1314,22 +1314,29 @@ def analyzer_ui(TIINGO_TOKEN):
             _live_acct = float(st.session_state.get("ps_acct", _port["account_value"]))
             _live_risk = float(st.session_state.get("ps_risk", _port["risk_pct"]))
             _live_maxp = int(st.session_state.get("ps_maxp", _port["max_positions"]))
-            _az_stop_default  = round(current_price - (atr * 2), 2)
+            _az_stop_default   = round(current_price - (atr * 2), 2)
+            _az_target_default = round(current_price + (atr * 4), 2)
+
+            # Use symbol-specific keys so switching tickers resets the defaults
+            _entry_key  = f"ps_entry_{symbol}"
+            _stop_key   = f"ps_stop_{symbol}"
+            _target_key = f"ps_target_{symbol}"
+
+            # Seed defaults into session state only on first visit for this symbol
+            if _entry_key  not in st.session_state: st.session_state[_entry_key]  = float(current_price)
+            if _stop_key   not in st.session_state: st.session_state[_stop_key]   = float(_az_stop_default)
+            if _target_key not in st.session_state: st.session_state[_target_key] = float(_az_target_default)
 
             _ps_col1, _ps_col2, _ps_col3 = st.columns(3)
             with _ps_col1:
-                _ps_entry = st.number_input("Entry Price ($)", value=float(current_price),
-                                            step=0.01, min_value=0.01, key="ps_entry_az")
+                _ps_entry = st.number_input("Entry Price ($)", step=0.01, min_value=0.01, key=_entry_key)
             with _ps_col2:
-                _ps_stop  = st.number_input("Stop Loss ($)", value=float(_az_stop_default),
-                                            step=0.01, min_value=0.01, key="ps_stop_az")
+                _ps_stop  = st.number_input("Stop Loss ($)",   step=0.01, min_value=0.01, key=_stop_key)
             with _ps_col3:
-                _ps_target = st.number_input("Target ($)",
-                                             value=float(round(current_price + (atr * 4), 2)),
-                                             step=0.01, min_value=0.01, key="ps_target_az")
+                _ps_target = st.number_input("Target ($)",     step=0.01, min_value=0.01, key=_target_key)
 
             _sz = calc_position_size(_live_acct, _live_risk, _ps_entry, _ps_stop)
-            if _sz:
+            if _sz and _sz.get("shares", 0) > 0:
                 _rr_live = abs(_ps_target - _ps_entry) / abs(_ps_entry - _ps_stop) if _ps_entry != _ps_stop else 0
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric("Shares to Buy", f"{_sz['shares']}")
@@ -1341,6 +1348,16 @@ def analyzer_ui(TIINGO_TOKEN):
                     f"Risk/share: ${_sz['risk_per_share']:.2f} · "
                     f"Position = {_sz['pct_of_account']:.1f}% of account · "
                     f"Max {_live_maxp} positions"
+                )
+            elif _sz is not None:
+                _dollar_risk = _live_acct * (_live_risk / 100)
+                _rps = abs(_ps_entry - _ps_stop)
+                st.warning(
+                    f"⚠️ **0 shares** — stop is too wide for your account size.\n\n"
+                    f"Your max loss per trade: **${_dollar_risk:.0f}** ({_live_risk}% of ${_live_acct:,.0f})  \n"
+                    f"Stop distance on this trade: **${_rps:.2f}**/share  \n\n"
+                    f"To get at least 1 share you need: stop within **${_dollar_risk:.2f}** of entry, "
+                    f"or raise your risk % above **{(_rps / _live_acct * 100):.1f}%**."
                 )
             st.divider()
 

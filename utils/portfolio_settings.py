@@ -1,13 +1,21 @@
 """
 Portfolio settings — account value, risk %, max positions.
-Stored in data/portfolio_settings.json.
-Loaded once; shared across all pages via st.session_state['portfolio'].
+
+Persistence strategy (most-reliable first):
+  1. GitHub Gist  — survives Streamlit Cloud reboots (uses GIST_WATCHLIST_ID secret,
+                     saves a separate 'portfolio_settings.json' file inside the same gist)
+  2. Local file   — data/portfolio_settings.json  (works on local dev)
+  3. Hardcoded defaults — fallback when neither is available
 """
 from pathlib import Path
 from datetime import datetime
-from utils.storage import load_json, save_json
+from utils.storage import load_json, save_json, load_gist_json, save_gist_json
+
+import streamlit as st
+import os
 
 SETTINGS_PATH = Path("data/portfolio_settings.json")
+GIST_FILENAME = "portfolio_settings.json"
 
 _DEFAULTS: dict = {
     "account_value": 10000.0,
@@ -17,16 +25,48 @@ _DEFAULTS: dict = {
 }
 
 
+def _gist_id() -> str | None:
+    """Return the Gist ID to use for portfolio persistence, or None."""
+    try:
+        return (
+            st.secrets.get("GIST_WATCHLIST_ID")
+            or os.getenv("GIST_WATCHLIST_ID")
+        )
+    except Exception:
+        return None
+
+
 def load_portfolio_settings() -> dict:
-    """Load settings from disk, filling missing keys with defaults."""
+    """Load settings — Gist first, then local file, then defaults."""
+    # 1. Try Gist (persists across Streamlit Cloud reboots)
+    gid = _gist_id()
+    if gid:
+        try:
+            data = load_gist_json(gid, GIST_FILENAME)
+            if data:
+                return {**_DEFAULTS, **data}
+        except Exception:
+            pass
+
+    # 2. Try local file (works on local dev / Docker)
     data = load_json(SETTINGS_PATH, default={})
     return {**_DEFAULTS, **data}
 
 
 def save_portfolio_settings(settings: dict) -> None:
-    """Stamp last_updated and persist to disk."""
+    """Stamp last_updated, then persist to Gist AND local file."""
     settings["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    # Always write local file
     save_json(settings, SETTINGS_PATH)
+
+    # Also write Gist if available
+    gid = _gist_id()
+    if gid:
+        try:
+            save_gist_json(gid, GIST_FILENAME, settings)
+        except Exception:
+            pass  # Gist failure is non-fatal; local file is the backup
 
 
 def calc_position_size(account_value: float, risk_pct: float,
