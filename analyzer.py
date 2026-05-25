@@ -24,6 +24,7 @@ from utils.relative_strength import (
 from utils.multi_timeframe import get_multi_timeframe_analysis, format_mtf_display
 from utils.target_calculator import calculate_fibonacci_target, format_target_display
 from utils.claude_analyzer import analyze_single_stock
+from utils.portfolio_settings import load_portfolio_settings, calc_position_size, format_portfolio_context_for_claude
 
 # ===================== MOBILE OPTIMIZATION: DATA CACHING =====================
 # Cache data for 5 minutes to prevent re-fetching when switching between apps
@@ -1305,6 +1306,38 @@ def analyzer_ui(TIINGO_TOKEN):
         # ===================== TAB 3: ML/AI ANALYSIS =====================
         with tab3:
 
+            # ─── Position Size Calculator ─────────────────────────────────────
+            st.subheader("📐 Position Size Calculator")
+            _port = st.session_state.get("portfolio", load_portfolio_settings())
+            _az_stop_default  = round(current_price - (atr * 2), 2)
+
+            _ps_col1, _ps_col2, _ps_col3 = st.columns(3)
+            with _ps_col1:
+                _ps_entry = st.number_input("Entry Price ($)", value=float(current_price),
+                                            step=0.01, min_value=0.01, key="ps_entry_az")
+            with _ps_col2:
+                _ps_stop  = st.number_input("Stop Loss ($)", value=float(_az_stop_default),
+                                            step=0.01, min_value=0.01, key="ps_stop_az")
+            with _ps_col3:
+                _ps_target = st.number_input("Target ($)",
+                                             value=float(round(current_price + (atr * 4), 2)),
+                                             step=0.01, min_value=0.01, key="ps_target_az")
+
+            _sz = calc_position_size(_port["account_value"], _port["risk_pct"], _ps_entry, _ps_stop)
+            if _sz:
+                _rr_live = abs(_ps_target - _ps_entry) / abs(_ps_entry - _ps_stop) if _ps_entry != _ps_stop else 0
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Shares to Buy", f"{_sz['shares']}")
+                m2.metric("Position Value", f"${_sz['position_value']:,.0f}")
+                m3.metric("$ at Risk", f"${_sz['dollar_risk']:,.0f} ({_port['risk_pct']}%)")
+                m4.metric("R:R Ratio", f"{_rr_live:.1f}:1")
+                st.caption(
+                    f"Account: ${_port['account_value']:,.0f} · "
+                    f"Risk/share: ${_sz['risk_per_share']:.2f} · "
+                    f"Position = {_sz['pct_of_account']:.1f}% of account"
+                )
+            st.divider()
+
             # ─── Claude AI Analysis ───────────────────────────────────────────
             st.subheader("🤖 Claude AI Analysis")
             st.caption("Live analysis using real-time data, 52W trend context, and recent news")
@@ -1356,7 +1389,13 @@ def analyzer_ui(TIINGO_TOKEN):
                             "rr_ratio": 2.0,
                         }
 
-                        ai_result = analyze_single_stock(symbol, stock_data_az, TIINGO_TOKEN, anthropic_key_az)
+                        _port_ctx = format_portfolio_context_for_claude(
+                            _port, entry=_ps_entry, stop=_ps_stop
+                        )
+                        ai_result = analyze_single_stock(
+                            symbol, stock_data_az, TIINGO_TOKEN, anthropic_key_az,
+                            portfolio_context=_port_ctx,
+                        )
                         st.session_state[f"analyzer_ai_{symbol}"] = ai_result
 
                 if st.session_state.get(f"analyzer_ai_{symbol}"):

@@ -30,6 +30,7 @@ from utils.storage import load_json, save_json, add_stock_to_enhanced_watchlist
 from utils.fundamentals import get_tiingo_fundamentals_for_claude, calculate_fundamental_score
 from utils.target_calculator import calculate_scanner_target
 from utils.claude_analyzer import analyze_scanner_results
+from utils.portfolio_settings import load_portfolio_settings, format_portfolio_context_for_claude
 
 # ---------------- Universe Loader ----------------
 from utils.universe_builder import CACHE_PATH
@@ -1362,7 +1363,12 @@ def scanner_ui(TIINGO_TOKEN):
                 )
             if run_ai:
                 with st.spinner("🤖 Analyzing scanner results... fetching news, 52W data, and market context..."):
-                    ai_summary = analyze_scanner_results(confirmed, TIINGO_TOKEN, anthropic_key)
+                    _scan_port = st.session_state.get("portfolio", load_portfolio_settings())
+                    _scan_port_ctx = format_portfolio_context_for_claude(_scan_port)
+                    ai_summary = analyze_scanner_results(
+                        confirmed, TIINGO_TOKEN, anthropic_key,
+                        portfolio_context=_scan_port_ctx,
+                    )
                 st.session_state["scanner_ai_summary"] = ai_summary
 
             if st.session_state.get("scanner_ai_summary"):

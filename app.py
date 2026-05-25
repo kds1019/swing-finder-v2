@@ -9,6 +9,7 @@ from journal_page import show_journal_page
 from utils.mobile_styles import apply_mobile_styles, add_pwa_meta_tags
 from utils.rate_limiter import show_rate_limit_status
 from config import AppPage, init_session_state
+from utils.portfolio_settings import load_portfolio_settings, save_portfolio_settings
 
 import os
 import json
@@ -155,6 +156,53 @@ if st.sidebar.button("🔄 Refresh Tiingo Universe"):
     st.cache_data.clear()
     refresh_universe_manual(TIINGO_TOKEN)
     st.rerun()  # Force a rerun to reload the universe
+
+# ---------------- Portfolio Settings ----------------
+if "portfolio" not in st.session_state:
+    st.session_state["portfolio"] = load_portfolio_settings()
+
+_ps = st.session_state["portfolio"]
+_updated_ts = _ps.get("last_updated")
+
+st.sidebar.divider()
+st.sidebar.subheader("💼 Portfolio Settings")
+if _updated_ts:
+    st.sidebar.caption(f"📅 Last updated: {_updated_ts}")
+else:
+    st.sidebar.caption("⚠️ Using defaults — click to configure")
+
+with st.sidebar.expander("✏️ Edit Settings"):
+    _new_acct = st.number_input(
+        "Account Value ($)", value=float(_ps["account_value"]),
+        step=500.0, min_value=100.0, key="ps_acct"
+    )
+    _new_risk = st.number_input(
+        "Risk per Trade (%)", value=float(_ps["risk_pct"]),
+        step=0.1, min_value=0.1, max_value=10.0, key="ps_risk",
+        help="% of account you risk on each trade (e.g. 1% = $100 on a $10k account)"
+    )
+    _new_maxp = st.number_input(
+        "Max Open Positions", value=int(_ps["max_positions"]),
+        step=1, min_value=1, max_value=50, key="ps_maxp"
+    )
+    if st.button("💾 Save Settings", key="ps_save", use_container_width=True):
+        _new_ps = {
+            "account_value": _new_acct,
+            "risk_pct": _new_risk,
+            "max_positions": int(_new_maxp),
+        }
+        save_portfolio_settings(_new_ps)
+        st.session_state["portfolio"] = _new_ps
+        st.success("✅ Saved!")
+        st.rerun()
+
+# show quick summary
+_dollar_risk = _ps["account_value"] * (_ps["risk_pct"] / 100)
+st.sidebar.caption(
+    f"💰 ${_ps['account_value']:,.0f} acct · "
+    f"${_dollar_risk:,.0f} risk/trade · "
+    f"{_ps['max_positions']} max positions"
+)
 
 # ---------------- Rate Limit Status ----------------
 st.sidebar.divider()

@@ -392,7 +392,8 @@ def quick_analyze_watchlist(watchlist: List[Dict], token: str, api_key: str) -> 
         return f"❌ Error analyzing watchlist: {str(e)}"
 
 
-def deep_analyze_stocks(selected_stocks: List[Dict], token: str, api_key: str) -> str:
+def deep_analyze_stocks(selected_stocks: List[Dict], token: str, api_key: str,
+                        portfolio_context: str = "") -> str:
     """
     Deep analysis of selected stocks using Sonnet (detailed & thorough).
     Includes 52W/6M trend context, recent news, and live market backdrop.
@@ -466,6 +467,14 @@ def deep_analyze_stocks(selected_stocks: List[Dict], token: str, api_key: str) -
             trend_arrow = "↑" if stock['trend_6m_dir'] == "UP" else "↓" if stock['trend_6m_dir'] == "DOWN" else "→"
             fund_block = format_fundamentals_for_prompt(stock.get("fundamentals", {}))
             fund_section = f"\n{fund_block}\n" if fund_block else ""
+            pat = stock.get("pattern")
+            pat_section = (
+                f"\nCHART PATTERN DETECTED:\n"
+                f"  {pat['type']} ({pat['bias']}, {pat['confidence']}% confidence)\n"
+                f"  {pat['description']}\n"
+                f"  Action: {pat['action']}\n"
+                if pat else ""
+            )
             stocks_block += (
                 f"{'═'*52}\n"
                 f"{i}. {stock['symbol']} — ${stock['current_price']}\n"
@@ -482,24 +491,29 @@ def deep_analyze_stocks(selected_stocks: List[Dict], token: str, api_key: str) -
                 f"CURRENT MARKET DATA:\n"
                 f"  Gap: {stock['gap_percent']:+.1f}% | Volume: {stock['volume_ratio']:.1f}x avg | RSI (14): {stock['rsi']:.1f}\n"
                 f"  Last 5 closes: {stock['recent_closes']}\n"
+                f"{pat_section}"
                 f"{fund_section}"
                 f"{news_section}\n"
                 f"TRADER NOTES: {stock['notes'] if stock['notes'] else 'None'}\n\n"
             )
 
+        portfolio_section = f"{portfolio_context}\n" if portfolio_context else ""
+
         user_prompt = (
             f"Please provide a DEEP ANALYSIS of these {len(stocks_data)} stocks from my watchlist.\n\n"
+            f"{portfolio_section}"
             f"{mkt_section}"
             f"{stocks_block}"
             "For EACH stock, provide:\n\n"
             "1. **SETUP ANALYSIS** — entry quality, stop placement, target logic, R:R assessment\n"
             "2. **52W / 6M TREND POSITION** — where is this stock in its bigger picture? Is the trend working for or against the setup?\n"
-            "3. **FUNDAMENTALS** — are the business fundamentals (margins, debt, ROE) a tailwind or headwind?\n"
-            "4. **NEWS IMPACT** — does recent news support or threaten the setup? Is there a catalyst?\n"
-            "5. **VOLUME CONVICTION** — what is volume telling us about institutional interest?\n"
-            "6. **ENTRY TIMING** — Enter now / Wait for confirmation / Skip? Give specific levels.\n"
-            "7. **POSITION SIZING** — Full / Half / Small, with reasoning\n"
-            "8. **RISKS TO MONITOR** — what would invalidate this setup? Key levels to watch.\n\n"
+            "3. **CHART PATTERN** — does the detected pattern (if any) add conviction or raise a red flag?\n"
+            "4. **FUNDAMENTALS** — are the business fundamentals (margins, debt, ROE) a tailwind or headwind?\n"
+            "5. **NEWS IMPACT** — does recent news support or threaten the setup? Is there a catalyst?\n"
+            "6. **VOLUME CONVICTION** — what is volume telling us about institutional interest?\n"
+            "7. **ENTRY TIMING** — Enter now / Wait for confirmation / Skip? Give specific levels.\n"
+            "8. **POSITION SIZING** — Full / Half / Small, with reasoning\n"
+            "9. **RISKS TO MONITOR** — what would invalidate this setup? Key levels to watch.\n\n"
             "Be thorough and specific. Use the LIVE data above — not your training data."
         )
 
@@ -531,7 +545,8 @@ def deep_analyze_stocks(selected_stocks: List[Dict], token: str, api_key: str) -
         return f"❌ Error analyzing stocks: {str(e)}"
 
 
-def analyze_scanner_results(confirmed: List[Dict], token: str, api_key: str) -> str:
+def analyze_scanner_results(confirmed: List[Dict], token: str, api_key: str,
+                            portfolio_context: str = "") -> str:
     """
     AI Scanner Summary — ranks confirmed scanner results and highlights top picks.
     Pulls 52W high/low + 6-month trend from Tiingo, news from yfinance, and
@@ -641,7 +656,10 @@ REQUIRED OUTPUT FORMAT:
 
 Be direct and specific. Traders need decisions, not analysis."""
 
+        portfolio_section = f"{portfolio_context}\n" if portfolio_context else ""
+
         user_prompt = (
+            f"{portfolio_section}"
             f"{mkt_section}"
             f"Scanner found {len(top)} confirmed setups today. Rank the TOP 3-5:\n"
             f"{stocks_section}\n"
@@ -667,7 +685,8 @@ Be direct and specific. Traders need decisions, not analysis."""
         return f"❌ Error analyzing scanner results: {str(e)}"
 
 
-def analyze_single_stock(symbol: str, stock_data: Dict[str, Any], token: str, api_key: str) -> str:
+def analyze_single_stock(symbol: str, stock_data: Dict[str, Any], token: str, api_key: str,
+                         portfolio_context: str = "") -> str:
     """
     Deep AI analysis of a single stock from the Analyzer page.
     Includes 52W high/low, 6-month trend, recent news, and market context.
@@ -726,7 +745,10 @@ Your analysis must use ONLY the data provided — not your training data. Treat 
 
 Be specific with price levels. Give the trader clear decisions they can act on immediately."""
 
+        portfolio_section = f"{portfolio_context}\n" if portfolio_context else ""
+
         user_prompt = (
+            f"{portfolio_section}"
             f"{mkt_section}"
             f"=== STOCK: {symbol} ===\n"
             f"Current Price: ${current_price:.2f} | Setup: {stock_data.get('setup_type', 'N/A')}"
