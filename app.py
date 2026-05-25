@@ -180,6 +180,11 @@ _new_maxp = st.sidebar.number_input(
     "Max Open Positions", value=int(_ps["max_positions"]),
     step=1, min_value=1, max_value=50, key="ps_maxp"
 )
+st.sidebar.number_input(
+    "Target R:R Ratio", value=2.0,
+    step=0.1, min_value=0.5, max_value=10.0, key="rr_ratio",
+    help="Minimum reward-to-risk you'll accept (2.0 = 2:1). Drives the Trade Planner target."
+)
 
 if st.sidebar.button("💾 Save Portfolio Settings", key="ps_save", use_container_width=True):
     _new_ps = {

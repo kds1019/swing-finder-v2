@@ -2018,9 +2018,10 @@ Coach me on timing, confirmation, and risk management."""
     st.divider()
     st.subheader("🧾 Trade Plan")
 
-    # --- Risk settings ---
-    account = float(st.session_state.get("account_size", 10_000.0))
-    risk_pct = float(st.session_state.get("risk_per_trade", 1.0))
+    # --- Risk settings — read from Portfolio Settings sidebar (ps_acct / ps_risk) ---
+    _tp_port = st.session_state.get("portfolio", load_portfolio_settings())
+    account  = float(st.session_state.get("ps_acct",       _tp_port.get("account_value", 10_000.0)))
+    risk_pct = float(st.session_state.get("ps_risk",       _tp_port.get("risk_pct", 1.0)))
     rr_ratio = float(st.session_state.get("rr_ratio", 2.0))
 
     # --- Manual override control (persists in session) ---
@@ -2371,10 +2372,7 @@ Coach me on timing, confirmation, and risk management."""
         st.markdown(setup_guidance_text(entry_signal, key_level, recent_low, recent_high))
 
 
-    # Use session state only — no duplicate defaults
-    st.sidebar.number_input("Account Size ($)", min_value=0.0, key="account_size")
-    st.sidebar.number_input("Risk per Trade (%)", min_value=0.1, max_value=10.0, key="risk_per_trade")
-    st.sidebar.number_input("Target R:R Ratio", min_value=0.5, max_value=10.0, step=0.1, key="rr_ratio")
+    # Target R:R Ratio is now part of Portfolio Settings sidebar in app.py
     
 # ---------------- Guidance Text Helper ----------------
 def setup_guidance_text(entry_signal: str, key_level: float,
