@@ -18,9 +18,9 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-def get_stock_news(symbol: str, days: int = 7, token: str = "") -> List[str]:
+def get_stock_news(symbol: str, days: int = 7, token: str = "") -> List[Dict[str, Any]]:
     """
-    Fetch recent news headlines for a stock to include in Claude prompts.
+    Fetch recent news articles for a stock with full context for Claude analysis.
 
     Strategy:
       1. Try Tiingo News API first (higher quality, ticker-specific).
@@ -33,10 +33,12 @@ def get_stock_news(symbol: str, days: int = 7, token: str = "") -> List[str]:
         token: Tiingo API token (optional — uses TIINGO_TOKEN env/secret if not passed)
 
     Returns:
-        List of up to 5 headline strings, e.g. ["AAPL beats earnings", ...]
+        List of up to 5 structured article dicts with keys:
+        title, description, category, sentiment, source, time_ago
     """
     import os
     import requests as _requests
+    from utils.news_feed import categorize_news, analyze_sentiment, format_news_time
 
     # --- 1. Try Tiingo News API ---
     try:
@@ -61,11 +63,24 @@ def get_stock_news(symbol: str, days: int = 7, token: str = "") -> List[str]:
             resp = _requests.get(url, params=params, headers=headers, timeout=8)
 
             if resp.status_code == 200:
-                articles = resp.json()
-                headlines = [a["title"] for a in articles if a.get("title")][:5]
-                if headlines:
-                    logger.info(f"Tiingo news: {len(headlines)} headlines for {symbol}")
-                    return headlines
+                raw_articles = resp.json()
+                articles = []
+                for a in raw_articles[:5]:
+                    title       = a.get("title", "") or ""
+                    description = a.get("description", "") or ""
+                    source      = a.get("source", "") or ""
+                    published   = a.get("publishedDate", "") or ""
+                    articles.append({
+                        "title":       title,
+                        "description": description[:300],
+                        "category":    categorize_news(title, description),
+                        "sentiment":   analyze_sentiment(title + " " + description),
+                        "source":      source,
+                        "time_ago":    format_news_time(published) if published else "",
+                    })
+                if articles:
+                    logger.info(f"Tiingo news: {len(articles)} articles for {symbol}")
+                    return articles
             elif resp.status_code == 403:
                 logger.info(f"Tiingo News API not available on current plan — falling back to yfinance for {symbol}")
             else:
@@ -82,23 +97,74 @@ def get_stock_news(symbol: str, days: int = 7, token: str = "") -> List[str]:
             return []
 
         cutoff_ts = (datetime.now() - timedelta(days=days)).timestamp()
-        headlines = []
+        articles = []
 
         for item in news_items:
-            pub_time = item.get("providerPublishTime", 0)
-            title = item.get("title", "")
+            pub_time  = item.get("providerPublishTime", 0)
+            title     = item.get("title", "") or ""
+            publisher = item.get("publisher", "") or ""
             if pub_time >= cutoff_ts and title:
-                headlines.append(title)
-            if len(headlines) >= 5:
+                # Convert unix timestamp to ISO string for format_news_time
+                try:
+                    pub_iso = datetime.fromtimestamp(pub_time).isoformat()
+                    time_ago = format_news_time(pub_iso)
+                except Exception:
+                    time_ago = ""
+                articles.append({
+                    "title":       title,
+                    "description": "",   # yfinance doesn't provide article descriptions
+                    "category":    categorize_news(title, ""),
+                    "sentiment":   analyze_sentiment(title),
+                    "source":      publisher,
+                    "time_ago":    time_ago,
+                })
+            if len(articles) >= 5:
                 break
 
-        if headlines:
-            logger.info(f"yfinance news: {len(headlines)} headlines for {symbol}")
-        return headlines
+        if articles:
+            logger.info(f"yfinance news: {len(articles)} articles for {symbol}")
+        return articles
 
     except Exception as e:
         logger.warning(f"yfinance news fetch also failed for {symbol}: {e}")
         return []
+
+
+def _format_news_for_claude(articles: List[Dict[str, Any]], max_articles: int = 3) -> str:
+    """
+    Format structured news article dicts into a Claude-readable block.
+
+    Each article shows: category | sentiment | source | recency
+    followed by the headline and description (if available).
+
+    Example output:
+        📊 Earnings | 🟢 Bullish | Reuters | 2 hours ago
+        "Apple beats Q3 EPS by 8%"
+        → EPS $1.26 vs $1.15 estimate. Services revenue hit record $24B.
+    """
+    if not articles:
+        return "No recent news found"
+    lines = []
+    for a in articles[:max_articles]:
+        sentiment  = a.get("sentiment", {})
+        s_emoji    = sentiment.get("emoji", "⚪")
+        s_label    = sentiment.get("label", "Neutral")
+        category   = a.get("category", "📰 General")
+        source     = a.get("source", "")
+        time_ago   = a.get("time_ago", "")
+        title      = a.get("title", "")
+        description = a.get("description", "")
+
+        meta_parts = [category, f"{s_emoji} {s_label}"]
+        if source:
+            meta_parts.append(source)
+        if time_ago:
+            meta_parts.append(time_ago)
+        meta = " | ".join(meta_parts)
+
+        desc_line = f"\n     → {description[:200]}" if description else ""
+        lines.append(f"   {meta}\n   \"{title}\"{desc_line}")
+    return "\n".join(lines)
 
 
 def get_market_context() -> Dict[str, Any]:
@@ -319,7 +385,7 @@ def quick_analyze_watchlist(watchlist: List[Dict], token: str, api_key: str) -> 
         stocks_block = ""
         for i, stock in enumerate(stocks_data, 1):
             news = stock.get("news_headlines", [])
-            news_line = f"\n   News: {' | '.join(news[:3])}" if news else ""
+            news_line = f"\n   News:\n{_format_news_for_claude(news, max_articles=2)}" if news else ""
             trend_arrow = "↑" if stock['trend_6m_dir'] == "UP" else "↓" if stock['trend_6m_dir'] == "DOWN" else "→"
             fund = stock.get("fundamentals", {})
             fund_line = ""
@@ -456,13 +522,12 @@ def deep_analyze_stocks(selected_stocks: List[Dict], token: str, api_key: str,
         stocks_block = ""
         for i, stock in enumerate(stocks_data, 1):
             news = stock.get("news_headlines", [])
-            news_section = ""
-            if news:
-                news_section = "RECENT NEWS (last 7 days — use this, not training data):\n"
-                for h in news[:5]:
-                    news_section += f"  • {h}\n"
-            else:
-                news_section = "RECENT NEWS: None found in last 7 days\n"
+            news_section = (
+                "RECENT NEWS (last 7 days — use this, not training data):\n"
+                + _format_news_for_claude(news, max_articles=3) + "\n"
+                if news else
+                "RECENT NEWS: None found in last 7 days\n"
+            )
 
             trend_arrow = "↑" if stock['trend_6m_dir'] == "UP" else "↓" if stock['trend_6m_dir'] == "DOWN" else "→"
             fund_block = format_fundamentals_for_prompt(stock.get("fundamentals", {}))
@@ -591,9 +656,9 @@ def analyze_scanner_results(confirmed: List[Dict], token: str, api_key: str,
             except Exception:
                 pass
 
-            # Recent news headlines via yfinance
+            # Fetch structured news articles (title + description + category + sentiment + source + recency)
             news = get_stock_news(symbol, days=7)
-            news_text = " | ".join(news[:3]) if news else "No recent news"
+            news_block = _format_news_for_claude(news, max_articles=3)
 
             earnings_note = rec.get("EarningsWarning", "") or ""
 
@@ -615,7 +680,7 @@ def analyze_scanner_results(confirmed: List[Dict], token: str, api_key: str,
                 f"   6-Month Trend: {trend_6m}%"
                 f"{pattern_note}"
                 f"{' | ' + earnings_note if earnings_note else ''}\n"
-                f"   Recent News: {news_text}\n"
+                f"   Recent News:\n{news_block}\n"
             )
 
         # Market context block
@@ -721,7 +786,7 @@ def analyze_single_stock(symbol: str, stock_data: Dict[str, Any], token: str, ap
 
         # ── Recent news: Tiingo first, yfinance fallback ──
         news = get_stock_news(symbol, days=7, token=token)
-        news_lines = "\n".join([f"   • {h}" for h in news]) if news else "   • No recent news found"
+        news_lines = _format_news_for_claude(news, max_articles=3)
 
         # ── Tiingo fundamentals ──
         fund = get_tiingo_fundamentals_for_claude(symbol, token)
