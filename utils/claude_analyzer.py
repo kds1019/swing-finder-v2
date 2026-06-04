@@ -657,7 +657,7 @@ def analyze_scanner_results(confirmed: List[Dict], token: str, api_key: str,
                 pass
 
             # Fetch structured news articles (title + description + category + sentiment + source + recency)
-            news = get_stock_news(symbol, days=7)
+            news = get_stock_news(symbol, days=7, token=token)
             news_block = _format_news_for_claude(news, max_articles=3)
 
             earnings_note = rec.get("EarningsWarning", "") or ""
@@ -668,11 +668,19 @@ def analyze_scanner_results(confirmed: List[Dict], token: str, api_key: str,
                 if pat else ""
             )
 
+            # Build volume signal string — direction matters (selling pressure ≠ buying conviction)
+            vol_signal = rec.get("VolSignal", "Neutral")
+            fib_zone = rec.get("FibZone", "N/A")
+            fib_pos = rec.get("FibPosition")
+            fib_str = (
+                f"{fib_zone} ({fib_pos:.0f}% Fib)" if fib_pos is not None else fib_zone or "N/A"
+            )
+
             stocks_section += (
                 f"\n{i}. {symbol} — {rec['Setup']} | SmartScore: {rec.get('SmartScore', 'N/A')}"
                 f" | Sector: {rec.get('Sector', 'N/A')}\n"
                 f"   Price: ${current_price:.2f} | RSI: {rec['RSI14']}"
-                f" | RelVol: {rec.get('RelVolume', 1.0):.1f}x | FibZone: {rec.get('FibZone', 'N/A')}\n"
+                f" | RelVol: {rec.get('RelVolume', 1.0):.1f}x ({vol_signal}) | FibZone: {fib_str}\n"
                 f"   Entry: ${current_price:.2f} | Stop: ${rec['Stop']:.2f}"
                 f" | Target: ${rec['Target']:.2f} | R:R: {rec.get('RR_Ratio', 0):.1f}:1\n"
                 f"   52W High: ${h52w} ({pct_from_high}% below high)"
@@ -699,13 +707,13 @@ def analyze_scanner_results(confirmed: List[Dict], token: str, api_key: str,
 
 RANKING CRITERIA (most important first):
 1. Risk:Reward — minimum 2:1, prefer 3:1+
-2. Volume — RelVol 1.5x+ shows real conviction
+2. Volume direction — RelVol 1.5x+ is only a positive signal if VolSignal is "Bullish" (buying on up candles). "Bearish" VolSignal means heavy selling/distribution — penalize long setups with Bearish volume even if RelVol looks high
 3. RSI position — 35-50 for pullbacks, 55-65 for breakouts
-4. Fibonacci zone — discount zone entries are higher quality
+4. Fibonacci zone — discount zone (below 38.2% Fib) entries are higher quality; premium zone = extended risk
 5. Chart pattern — bullish patterns (Bull Flag, Cup & Handle, Double Bottom, Ascending Triangle) add conviction; bearish patterns (Bear Flag, Double Top, Head & Shoulders, Descending Triangle) are red flags on long setups
 6. 6-Month trend — broader trend must support the setup direction
 7. Distance from 52-Week High — within 3% of 52W high = extended, higher risk
-8. News sentiment — recent news supporting or threatening the thesis
+8. News sentiment — recent news supporting or threatening the thesis; categorized news type (Earnings, Analyst, M&A) matters — earnings risk = avoid
 9. Earnings risk — stocks with earnings in <7 days = avoid
 
 REQUIRED OUTPUT FORMAT:
