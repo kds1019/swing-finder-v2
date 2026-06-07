@@ -7,6 +7,7 @@ import requests
 
 from utils.logger import get_logger
 
+
 # Initialize logger
 logger = get_logger(__name__)
 
@@ -86,6 +87,114 @@ def save_gist_json(gist_id: str, filename: str, content: dict) -> None:
             logger.warning(f"Gist save failed: {r.status_code}")
     except Exception as e:
         logger.error(f"save_gist_json error: {e}")
+
+# ---------------- App-Wide Watchlist Gist Functions ----------------
+def _get_gist_creds():
+    """Return (github_token, gist_id) tuple from secrets/env. Both may be None."""
+    github_token = (
+        st.secrets.get("GITHUB_GIST_TOKEN")
+        or st.secrets.get("GITHUB_TOKEN")
+        or os.getenv("GITHUB_GIST_TOKEN")
+        or os.getenv("GITHUB_TOKEN")
+    )
+    gist_id = (
+        st.secrets.get("GIST_ID")
+        or st.secrets.get("GIST_WATCHLIST_ID")
+        or os.getenv("GIST_ID")
+        or os.getenv("GIST_WATCHLIST_ID")
+    )
+    return github_token, gist_id
+
+
+def load_watchlists_from_gist() -> dict:
+    """
+    Load all named watchlists from GitHub Gist.
+    Returns dict of {name: [ticker_list]}.
+    Falls back to {"Unnamed": []} if Gist is unavailable.
+    """
+    try:
+        github_token, gist_id = _get_gist_creds()
+        if not github_token or not gist_id:
+            return {"Unnamed": []}
+
+        url = f"https://api.github.com/gists/{gist_id}"
+        headers = {"Authorization": f"token {github_token}"}
+        r = requests.get(url, headers=headers, timeout=10)
+        if not r.ok:
+            return {"Unnamed": []}
+
+        files = r.json().get("files", {})
+        if not files:
+            return {"Unnamed": []}
+
+        content = (
+            files.get("watchlist.json", next(iter(files.values()), {}))
+            .get("content", "{}")
+        )
+        data = json.loads(content)
+        if isinstance(data, list):
+            return {"Unnamed": data}
+        if not isinstance(data, dict):
+            return {"Unnamed": []}
+        return data
+    except Exception as e:
+        logger.warning(f"load_watchlists_from_gist error: {e}")
+        return {"Unnamed": []}
+
+
+def save_watchlists_to_gist(watchlists_dict: dict) -> None:
+    """
+    Save all named watchlists to GitHub Gist.
+    watchlists_dict format: {name: [ticker_list]}
+    """
+    try:
+        github_token, gist_id = _get_gist_creds()
+        if not github_token or not gist_id:
+            logger.warning("save_watchlists_to_gist: missing Gist credentials")
+            return
+
+        url = f"https://api.github.com/gists/{gist_id}"
+        headers = {"Authorization": f"token {github_token}"}
+        payload = {
+            "files": {
+                "watchlist.json": {
+                    "content": json.dumps(watchlists_dict, indent=2)
+                }
+            }
+        }
+        r = requests.patch(url, headers=headers, json=payload, timeout=10)
+        if not r.ok:
+            logger.warning(f"save_watchlists_to_gist failed: {r.status_code}")
+    except Exception as e:
+        logger.error(f"save_watchlists_to_gist error: {e}")
+
+
+def load_base_scan_metadata() -> dict:
+    """
+    Load Base Formation Scanner metadata from Gist.
+    Returns dict of {ticker: {resistance, base_score, tier, date_added}}
+    """
+    try:
+        github_token, gist_id = _get_gist_creds()
+        if not github_token or not gist_id:
+            return {}
+        data = load_gist_json(gist_id, "base_scan_metadata.json")
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        logger.warning(f"load_base_scan_metadata error: {e}")
+        return {}
+
+
+def save_base_scan_metadata(metadata: dict) -> None:
+    """Save Base Formation Scanner metadata to Gist."""
+    try:
+        github_token, gist_id = _get_gist_creds()
+        if not github_token or not gist_id:
+            return
+        save_gist_json(gist_id, "base_scan_metadata.json", metadata)
+    except Exception as e:
+        logger.error(f"save_base_scan_metadata error: {e}")
+
 
 # ---------------- High-Level Watchlist Helpers ----------------
 def load_watchlist() -> list:
@@ -169,74 +278,4 @@ def save_watchlist(tickers: list) -> None:
 
 
 
-def add_stock_to_enhanced_watchlist(symbol: str, entry: float = None, stop: float = None,
-                                   target: float = None, setup_type: str = None, notes: str = None):
-    """
-    Add a stock to the enhanced watchlist with entry/stop/target data.
-    Auto-syncs to both local file and GitHub Gist.
 
-    Args:
-        symbol: Stock ticker
-        entry: Entry price
-        stop: Stop loss price
-        target: Target price
-        setup_type: Type of setup (e.g., "Breakout", "Pullback")
-        notes: Optional notes
-
-    Returns:
-        bool: True if added successfully, False if already exists
-    """
-    # Load current watchlist
-    gist_id = st.secrets.get("GIST_ID") or os.getenv("GIST_ID")
-    watchlist = []
-
-    if gist_id:
-        try:
-            watchlist = load_gist_json(gist_id, "watchlist_enhanced.json") or []
-        except:
-            pass
-
-    if not watchlist:
-        watchlist = load_json("data/watchlist_enhanced.json", default=[])
-
-    # Check if stock already exists
-    existing_symbols = [item.get('symbol') for item in watchlist if isinstance(item, dict)]
-    if symbol in existing_symbols:
-        return False  # Already exists
-
-    # Create new stock entry
-    new_stock = {
-        'symbol': symbol,
-        'setup_type': setup_type,
-        'entry': entry,
-        'stop': stop,
-        'target': target,
-        'notes': notes
-    }
-
-    # Add to watchlist
-    watchlist.append(new_stock)
-
-    # Save locally
-    save_json(watchlist, "data/watchlist_enhanced.json")
-
-    # Save to Gist
-    if gist_id:
-        github_token = st.secrets.get("GITHUB_GIST_TOKEN") or os.getenv("GITHUB_GIST_TOKEN")
-        if github_token:
-            try:
-                save_gist_json(gist_id, "watchlist_enhanced.json", watchlist)
-
-                # Also update Scanner format for compatibility
-                scanner_data = load_gist_json(gist_id, "watchlist.json") or {}
-                if isinstance(scanner_data, dict):
-                    active_name = st.session_state.get("active_watchlist", "Unnamed")
-                    if active_name not in scanner_data:
-                        scanner_data[active_name] = []
-                    if symbol not in scanner_data[active_name]:
-                        scanner_data[active_name].append(symbol)
-                    save_gist_json(gist_id, "watchlist.json", scanner_data)
-            except:
-                pass
-
-    return True

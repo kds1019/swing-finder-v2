@@ -11,6 +11,7 @@ from enum import Enum
 
 class AppPage(Enum):
     """Enum for consistent page navigation across the app."""
+    BASE_SCANNER = "Base Scanner"
     PREMARKET = "Pre-Market"
     SCANNER = "Scanner"
     ANALYZER = "Analyzer"
@@ -341,4 +342,11 @@ def init_session_state():
 
     if "smart_context" not in st.session_state:
         st.session_state.smart_context = {}
+
+    # Base Formation Scanner state
+    if "base_scan_results" not in st.session_state:
+        st.session_state.base_scan_results = []
+
+    if "base_scan_metadata" not in st.session_state:
+        st.session_state.base_scan_metadata = {}  # {ticker: {resistance, base_score, tier, date_added}}
 

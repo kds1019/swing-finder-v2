@@ -6,10 +6,12 @@ from active_trades import active_trades_ui
 from alerts_page import show_alerts_page
 from backtest_page import show_backtest_page
 from journal_page import show_journal_page
+from base_scanner import base_scanner_ui
 from utils.mobile_styles import apply_mobile_styles, add_pwa_meta_tags
 from utils.rate_limiter import show_rate_limit_status
 from config import AppPage, init_session_state
 from utils.portfolio_settings import load_portfolio_settings, save_portfolio_settings
+from utils.storage import load_watchlists_from_gist, save_watchlists_to_gist
 
 import os
 import json
@@ -102,6 +104,17 @@ if "is_mobile" not in st.session_state:
 # Initialize all session state variables with defaults
 init_session_state()
 
+# Load watchlists once at startup so ALL pages have access
+if "watchlists" not in st.session_state or not st.session_state.watchlists:
+    st.session_state.watchlists = load_watchlists_from_gist()
+if "active_watchlist" not in st.session_state or not st.session_state.active_watchlist:
+    keys = list(st.session_state.watchlists.keys())
+    st.session_state.active_watchlist = keys[0] if keys else "Unnamed"
+if "watchlist" not in st.session_state:
+    st.session_state.watchlist = st.session_state.watchlists.get(
+        st.session_state.active_watchlist, []
+    )
+
 # Normalize active page to ensure consistency
 st.session_state["active_page"] = AppPage.normalize(st.session_state["active_page"])
 
@@ -110,8 +123,9 @@ st.sidebar.title("⚙️ SwingFinder Navigation")
 
 # Define available pages
 available_pages = [
-    AppPage.PREMARKET.value,
+    AppPage.BASE_SCANNER.value,
     AppPage.SCANNER.value,
+    AppPage.PREMARKET.value,
     AppPage.ANALYZER.value,
     AppPage.BACKTEST.value,
     AppPage.ALERTS.value,
@@ -208,7 +222,9 @@ show_rate_limit_status()
 
 
 # ---------------- Page Routing ----------------
-if st.session_state["active_page"] == "Scanner":
+if st.session_state["active_page"] == AppPage.BASE_SCANNER.value:
+    base_scanner_ui(TIINGO_TOKEN)
+elif st.session_state["active_page"] == "Scanner":
     scanner_ui(TIINGO_TOKEN)
 elif st.session_state["active_page"] == "Analyzer":
     analyzer_ui(TIINGO_TOKEN)

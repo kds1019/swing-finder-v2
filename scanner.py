@@ -26,7 +26,7 @@ from utils.indicators import (
     calculate_fibonacci_levels, get_fibonacci_zone_label,
     detect_patterns, find_pivot_points,
 )
-from utils.storage import load_json, save_json, add_stock_to_enhanced_watchlist
+from utils.storage import load_json, save_json, load_watchlists_from_gist, save_watchlists_to_gist, load_base_scan_metadata
 from utils.fundamentals import get_tiingo_fundamentals_for_claude, calculate_fundamental_score
 from utils.target_calculator import calculate_scanner_target
 from utils.claude_analyzer import analyze_scanner_results
@@ -87,84 +87,7 @@ def scanner_ui(TIINGO_TOKEN):
         if k not in st.session_state:
             st.session_state[k] = v
 
-    # ---------- Gist Functions (defined early so they can be used anywhere) ----------
-    import requests, json, os
-
-    def load_watchlists_from_gist():
-        """Load all saved watchlists (dict of {name: [tickers]}) from GitHub Gist."""
-        try:
-            token = (
-                st.secrets.get("GITHUB_GIST_TOKEN")
-                or os.getenv("GITHUB_GIST_TOKEN")
-                or st.secrets.get("GITHUB_TOKEN")
-            )
-            gist_id = (
-                st.secrets.get("GIST_ID")
-                or os.getenv("GIST_ID")
-                or st.secrets.get("GIST_WATCHLIST_ID")
-            )
-
-            if not token or not gist_id:
-                return {"Unnamed": []}
-
-            url = f"https://api.github.com/gists/{gist_id}"
-            headers = {"Authorization": f"token {token}"}
-            r = requests.get(url, headers=headers, timeout=10)
-            if not r.ok:
-                return {"Unnamed": []}
-
-            files = r.json().get("files", {})
-            if not files:
-                return {"Unnamed": []}
-
-            content = (
-                files.get("watchlist.json", next(iter(files.values()), {}))
-                .get("content", "{}")
-            )
-
-            data = json.loads(content)
-            if isinstance(data, list):
-                return {"Unnamed": data}
-            if not isinstance(data, dict):
-                return {"Unnamed": []}
-            return data
-
-        except Exception as e:
-            return {"Unnamed": []}
-
-    def save_watchlists_to_gist(watchlists_dict: dict):
-        """Save all watchlists (dict of {name: [tickers]}) to GitHub Gist."""
-        try:
-            token = (
-                st.secrets.get("GITHUB_GIST_TOKEN")
-                or os.getenv("GITHUB_GIST_TOKEN")
-                or st.secrets.get("GITHUB_TOKEN")
-            )
-            gist_id = (
-                st.secrets.get("GIST_ID")
-                or os.getenv("GIST_ID")
-                or st.secrets.get("GIST_WATCHLIST_ID")
-            )
-
-            if not token or not gist_id:
-                st.warning("⚠️ Missing Gist credentials in secrets.")
-                return
-
-            url = f"https://api.github.com/gists/{gist_id}"
-            headers = {"Authorization": f"token {token}"}
-            payload = {
-                "files": {
-                    "watchlist.json": {
-                        "content": json.dumps(watchlists_dict, indent=2)
-                    }
-                }
-            }
-            r = requests.patch(url, headers=headers, json=payload, timeout=10)
-            if not r.ok:
-                st.warning(f"⚠️ Failed to save watchlists: {r.status_code}")
-
-        except Exception as e:
-            st.warning(f"⚠️ Could not save to Gist: {e}")
+    # Watchlist Gist functions now live in utils/storage.py and are imported above.
 
     st.title("📊 Scanner")
 
@@ -783,14 +706,6 @@ def scanner_ui(TIINGO_TOKEN):
         st.session_state["scanner_results_near"] = near_misses
         st.session_state["scanner_results"] = confirmed + near_misses   # ✅ add this line!
 
-        st.write(f"🧪 **Debug:** {len(confirmed)} confirmed setups | {len(near_misses)} near misses")
-
-        # Show first few results for debugging
-        if results:
-            st.write(f"📊 **Sample Results (first 3):**")
-            for r in results[:3]:
-                st.write(f"  - {r.get('Symbol')}: Setup={r.get('Setup')}, RSI={r.get('RSI14')}, Band={r.get('BandPos20')}, SmartScore={r.get('SmartScore')}")
-
         # --- remove duplicate symbols ---
         unique_results = []
         seen = set()
@@ -869,11 +784,16 @@ def scanner_ui(TIINGO_TOKEN):
 
     # ---------------- Watchlist Screener (detailed reasons for failed tickers) ----------------
     def run_watchlist_scan_only(watchlist, mode, price_min, price_max, min_volume):
-        """Run the screener only for tickers in the user's watchlist, returning results and detailed debug info."""
+        """Run the screener only for tickers in the user's watchlist, returning results and detailed debug info.
+        Also checks for Tier 2 breakout triggers on any ticker that has base scan metadata."""
         if not watchlist:
-            return [], [("⚠️", "No tickers found in watchlist.")]
+            return [], [("⚠️", "No tickers found in watchlist.")], []
+
+        # Load base scan metadata for Tier 2 breakout checks
+        base_metadata = st.session_state.get("base_scan_metadata") or load_base_scan_metadata()
 
         results = []
+        breakout_triggers = []  # Tier 2 breakout results
         debug_log = []
         total = len(watchlist)
         progress = st.progress(0, text=f"🎯 Scanning {total} watchlist symbols...")
@@ -887,6 +807,50 @@ def scanner_ui(TIINGO_TOKEN):
                 else:
                     reason = check_ticker_failure_reason(ticker, price_min, price_max, min_volume)
                     debug_log.append(("🚫", f"{ticker}: {reason}"))
+
+                # --- Tier 2 Breakout Check (independent of SmartScore pass/fail) ---
+                if ticker in base_metadata:
+                    meta = base_metadata[ticker]
+                    resistance = meta.get("resistance")
+                    if resistance:
+                        try:
+                            df_bt = tiingo_history(ticker, TIINGO_TOKEN, 30)
+                            if df_bt is not None and not df_bt.empty and len(df_bt) >= 2:
+                                last = df_bt.iloc[-1]
+                                close = float(last["Close"])
+                                open_p = float(last["Open"])
+                                high = float(last["High"])
+                                low = float(last["Low"])
+                                vol = float(last["Volume"])
+                                avg_vol = float(df_bt["Volume"].iloc[-21:-1].mean()) if len(df_bt) >= 22 else float(df_bt["Volume"].mean())
+
+                                candle_range = high - low
+                                body = abs(close - open_p)
+                                body_pct = (body / candle_range * 100) if candle_range > 0 else 0
+                                vol_ratio = vol / avg_vol if avg_vol > 0 else 0
+
+                                breakout_triggered = (
+                                    close > resistance and
+                                    vol_ratio >= 1.3 and
+                                    body_pct >= 60.0
+                                )
+
+                                if breakout_triggered:
+                                    breakout_triggers.append({
+                                        "Symbol": ticker,
+                                        "Price": close,
+                                        "Resistance": resistance,
+                                        "VolumeRatio": round(vol_ratio, 2),
+                                        "BodyPct": round(body_pct, 1),
+                                        "BaseScore": meta.get("base_score", "N/A"),
+                                        "Tier": meta.get("tier", "N/A"),
+                                    })
+                                    debug_log.append(("🔥", f"{ticker}: TIER 2 BREAKOUT — Price ${close:.2f} > Resistance ${resistance:.2f}, Vol {vol_ratio:.1f}x, Body {body_pct:.0f}%"))
+                                else:
+                                    debug_log.append(("👁️", f"{ticker}: watching base — ${close:.2f} vs resistance ${resistance:.2f}, Vol {vol_ratio:.1f}x, Body {body_pct:.0f}%"))
+                        except Exception as be:
+                            debug_log.append(("⚠️", f"{ticker}: breakout check error — {be}"))
+
             except Exception as e:
                 debug_log.append(("⚠️", f"{ticker}: error — {e}"))
             progress.progress(i / total, text=f"🎯 {i}/{total} scanned | Hits: {len(results)}")
@@ -930,9 +894,11 @@ def scanner_ui(TIINGO_TOKEN):
             if success_count > 0:
                 debug_log.append(("📊", f"Fundamental data: {success_count}/{len(results)} stocks"))
 
-        if not results:
+        if not results and not breakout_triggers:
             debug_log.append(("❌", "No tickers met your criteria."))
-        return results, debug_log
+        if breakout_triggers:
+            debug_log.insert(0, ("🔥", f"{len(breakout_triggers)} Tier 2 Breakout(s) detected!"))
+        return results, debug_log, breakout_triggers
 
 
     # ---------------- UI: Controls ----------------
@@ -1229,14 +1195,10 @@ def scanner_ui(TIINGO_TOKEN):
     st.header("📊 Webull-Style Market Scanner — U.S. (Tiingo)")
     st.caption("All active U.S. equities. Filters: price, volume, and setup mode (Pullback/Breakout/Both). Cards show your Trade Plan target & stop.")
 
-    # DEBUG: Check if button was clicked
-    st.write(f"🔍 DEBUG: run_scan button state = {run_scan}")
-
     if run_scan:
         st.session_state["scanner_running"] = True
         with st.spinner("Scanning the U.S. market... this may take 1–2 minutes"):
             current_mode = st.session_state.get("setup_mode", "Breakout")
-            st.write(f"🧭 Running full scan mode: {current_mode}")
             st.session_state["scanner_results"] = run_full_scan(
                 mode=current_mode,
                 price_min=price_min,
@@ -1508,26 +1470,15 @@ def scanner_ui(TIINGO_TOKEN):
                             cA, cB = st.columns(2)
                             with cA:
                                 if st.button("➕ Watchlist", key=f"wl_confirmed_{rec['Symbol']}_{r}_{j}"):
-                                    # Add to enhanced watchlist with entry/stop/target data
-                                    success = add_stock_to_enhanced_watchlist(
-                                        symbol=rec["Symbol"],
-                                        entry=rec.get('Price'),  # Current price as entry
-                                        stop=rec.get('Stop'),
-                                        target=rec.get('Target'),
-                                        setup_type=rec.get('Setup'),
-                                        notes=f"Added from Scanner - {rec.get('SetupContext', '')}"
-                                    )
-
-                                    if success:
-                                        # Also add to simple watchlist for Scanner compatibility
-                                        if rec["Symbol"] not in st.session_state.watchlist:
-                                            st.session_state.watchlist.append(rec["Symbol"])
-                                            if st.session_state.get("active_watchlist"):
-                                                st.session_state.watchlists[st.session_state.active_watchlist] = st.session_state.watchlist
-                                                save_watchlists_to_gist(st.session_state.watchlists)
-                                        st.success(f"✅ Added {rec['Symbol']} to watchlist with Entry: ${rec.get('Price'):.2f}, Stop: ${rec.get('Stop'):.2f}, Target: ${rec.get('Target'):.2f}")
+                                    sym = rec["Symbol"]
+                                    if sym not in st.session_state.watchlist:
+                                        st.session_state.watchlist.append(sym)
+                                        active_wl = st.session_state.get("active_watchlist", "Unnamed")
+                                        st.session_state.watchlists[active_wl] = st.session_state.watchlist
+                                        save_watchlists_to_gist(st.session_state.watchlists)
+                                        st.success(f"✅ Added {sym} to watchlist!")
                                     else:
-                                        st.info(f"{rec['Symbol']} already on watchlist.")
+                                        st.info(f"{sym} already on watchlist.")
                             with cB:
                                 if st.button("🔍 Send to Analyzer", key=f"an_confirmed_{rec['Symbol']}_{r}_{j}"):
                                     st.session_state["analyze_symbol"] = rec["Symbol"]
@@ -1670,6 +1621,33 @@ def scanner_ui(TIINGO_TOKEN):
 
 
 
+    # ---------------- Tier 2 Breakout Triggers (Main Page) ----------------
+    if st.session_state.get("watchlist_breakouts"):
+        st.markdown("---")
+        with st.expander("🔥 Tier 2 Breakout Triggers", expanded=True):
+            st.markdown("### 🔥 These stalked stocks have triggered breakout conditions!")
+            st.caption("Price > Resistance | Volume ≥ 1.3× avg | Candle Body ≥ 60%")
+            breakouts = st.session_state["watchlist_breakouts"]
+            cols = st.columns(min(len(breakouts), 4))
+            for i, bo in enumerate(breakouts):
+                with cols[i % 4]:
+                    st.markdown(f"""
+                    <div style="border:2px solid #f97316;border-radius:14px;padding:10px;background:rgba(249,115,22,0.08);">
+                        <div style="font-weight:700;font-size:1.2rem;">🔥 {bo['Symbol']}</div>
+                        <div style="font-size:0.95rem;margin-top:4px;">
+                            Price: <b>${bo['Price']:.2f}</b><br/>
+                            Resistance: <b>${bo['Resistance']:.2f}</b><br/>
+                            Volume: <b>{bo['VolumeRatio']:.1f}×</b> avg<br/>
+                            Candle body: <b>{bo['BodyPct']:.0f}%</b><br/>
+                            Base Score: <b>{bo['BaseScore']}</b> | Tier: <b>{bo['Tier']}</b>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if st.button("🔍 Analyze", key=f"bo_analyze_{bo['Symbol']}"):
+                        st.session_state["analyze_symbol"] = bo["Symbol"]
+                        st.session_state["active_page"] = "Analyzer"
+                        st.rerun()
+
     # ---------------- Watchlist Screener Results (Main Page) ----------------
     if "watchlist_results" in st.session_state and st.session_state["watchlist_results"]:
         st.markdown("---")
@@ -1788,22 +1766,16 @@ def scanner_ui(TIINGO_TOKEN):
 
     # =========================================================================================================
 
-    # ----------------- Session Initialization -----------------
-    if "watchlists" not in st.session_state:
+    # Watchlists are loaded at app startup in app.py; just guard against edge case.
+    if "watchlists" not in st.session_state or not st.session_state.watchlists:
         st.session_state.watchlists = load_watchlists_from_gist()
-
-    if "active_watchlist" not in st.session_state:
+    if "active_watchlist" not in st.session_state or not st.session_state.active_watchlist:
         keys = list(st.session_state.watchlists.keys())
-        st.session_state.active_watchlist = keys[0] if keys else None
-
+        st.session_state.active_watchlist = keys[0] if keys else "Unnamed"
     if "watchlist" not in st.session_state:
-        if st.session_state.active_watchlist:
-            st.session_state.watchlist = st.session_state.watchlists.get(
-                st.session_state.active_watchlist, []
-            )
-        else:
-            st.session_state.watchlist = []
-
+        st.session_state.watchlist = st.session_state.watchlists.get(
+            st.session_state.active_watchlist, []
+        )
 
     # ----------------- Sidebar Watchlist Manager -----------------
     with st.sidebar.expander("📂 Watchlist"):
@@ -1927,7 +1899,7 @@ def scanner_ui(TIINGO_TOKEN):
                     st.warning("⚠️ Your watchlist is empty.")
                 else:
                     with st.spinner(f"Scanning {len(st.session_state.watchlist)} symbols..."):
-                        results, debug_log = run_watchlist_scan_only(
+                        results, debug_log, breakout_triggers = run_watchlist_scan_only(
                             st.session_state.watchlist,
                             mode,
                             price_min,
@@ -1936,6 +1908,7 @@ def scanner_ui(TIINGO_TOKEN):
                         )
                     st.session_state["watchlist_results"] = results
                     st.session_state["watchlist_debug"] = debug_log
+                    st.session_state["watchlist_breakouts"] = breakout_triggers
                     st.session_state["show_watchlist_results"] = True
                     st.rerun()
 
