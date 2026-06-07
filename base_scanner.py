@@ -1,20 +1,50 @@
 """
 Base Formation Scanner
-Identifies stocks coiling into low-volatility consolidation bases before breakouts.
+Scans the quality universe for stocks coiling into low-volatility consolidation bases.
 Tier 1 = high conviction (score 8-10), Tier 2 = developing (6-7), Tier 3 = early (4-5).
 """
+import concurrent.futures as futures
+import json
 import math
+import os
+import time
 from datetime import datetime
 
 import pandas as pd
 import streamlit as st
 
-from utils.tiingo_api import tiingo_history, tiingo_all_us_tickers, get_next_earnings_date
+from utils.tiingo_api import tiingo_history, tiingo_all_us_tickers, get_next_earnings_date  # tiingo_all_us_tickers used as fallback in _load_universe
 from utils.indicators import compute_indicators
 from utils.storage import (
-    load_watchlists_from_gist, save_watchlists_to_gist,
+    save_watchlists_to_gist,
     load_base_scan_metadata, save_base_scan_metadata,
 )
+from utils.universe_builder import CACHE_PATH
+
+# ---------------------------------------------------------------------------
+# Universe Loader  (mirrors scanner.py logic, no cross-import needed)
+# ---------------------------------------------------------------------------
+MAX_WORKERS = 6
+BATCH_SIZE  = 40
+BATCH_PAUSE = 0.25   # seconds between batches
+
+
+def _load_universe(token: str) -> list[str]:
+    """Load the cached quality universe; fall back to Tiingo API."""
+    try:
+        if os.path.exists(CACHE_PATH):
+            with open(CACHE_PATH, "r") as f:
+                data = json.load(f)
+            tickers = [t["ticker"].upper() for t in data.get("tickers", [])]
+            seen, unique = set(), []
+            for t in tickers:
+                if t not in seen:
+                    seen.add(t); unique.append(t)
+            if unique:
+                return unique
+    except Exception:
+        pass
+    return tiingo_all_us_tickers(token)
 
 
 # ---------------------------------------------------------------------------
@@ -43,11 +73,18 @@ def _is_earnings_within_14_days(ticker: str, token: str) -> bool:
 # Core Evaluation
 # ---------------------------------------------------------------------------
 
-def evaluate_base_formation(ticker: str, token: str) -> dict | None:
+def evaluate_base_formation(
+    ticker: str,
+    token: str,
+    price_min: float = 5.0,
+    price_max: float = 500.0,
+    min_avg_vol: float = 300_000,
+) -> dict | None:
     """
     Score a ticker for base-formation quality (0–10).
-    Returns None if data is insufficient or score < 4.
-    Resistance is set to the 20-day high (used as the breakout trigger price).
+    Applies price/volume pre-filters before scoring.
+    Returns None if it fails any filter or scores < 4.
+    Resistance is the 20-day high (breakout trigger price).
     """
     try:
         df = tiingo_history(ticker, token, days=90)
@@ -62,6 +99,12 @@ def evaluate_base_formation(ticker: str, token: str) -> dict | None:
         atr_now  = float(last.get("ATR14") or 0)
         avg_vol  = float(last.get("AvgVol20") or 0)
         hh20     = float(last.get("HH20") or price)
+
+        # --- Pre-filters (fast exit before scoring) ---
+        if not (price_min <= price <= price_max):
+            return None
+        if avg_vol < min_avg_vol:
+            return None
 
         if ema50 == 0 or atr_now == 0:
             return None
@@ -160,77 +203,86 @@ def base_scanner_ui(TIINGO_TOKEN: str):
 
     st.header("🔭 Base Formation Scanner")
     st.caption(
-        "Find stocks coiling into low-volatility consolidation bases — "
-        "stocks to **stalk** before their next breakout move."
+        "Scans the quality universe for stocks coiling into tight consolidation bases — "
+        "stocks to **stalk and add to your watchlist** before the breakout move."
     )
 
-    # ── Sidebar ──────────────────────────────────────────────────────────────
+    # ── Sidebar Controls ──────────────────────────────────────────────────────
     with st.sidebar:
-        st.subheader("🔭 Base Scanner Controls")
-        min_score = st.slider(
-            "Minimum Base Score", 4, 10, 6,
-            help="4 = Early stage  |  6 = Developing  |  8 = High conviction",
+        st.subheader("🔭 Base Scanner Filters")
+        price_min = st.number_input("Min Price ($)", value=10.0, step=5.0, min_value=1.0)
+        price_max = st.number_input("Max Price ($)", value=300.0, step=25.0, min_value=5.0)
+        min_volume = st.number_input(
+            "Min Avg Volume", value=500_000, step=100_000, min_value=50_000,
+            format="%d",
         )
-        use_custom = st.checkbox("Use custom ticker list", value=True)
-        if not use_custom:
-            st.warning("Full universe scan may take 15–25 minutes.")
+        min_score = st.slider(
+            "Min Base Score", 4, 10, 6,
+            help="4 = Early  |  6 = Developing  |  8 = High Conviction",
+        )
 
     st.markdown("---")
 
-    # ── Ticker Input ─────────────────────────────────────────────────────────
-    if use_custom:
-        raw = st.text_area(
-            "Tickers to Scan",
-            placeholder="AAPL\nMSFT\nNVDA\nTSLA, AMD, SMCI",
-            height=120,
-            help="Comma or newline separated. These are your stalking candidates.",
-        )
-        universe = [t.strip().upper() for t in raw.replace(",", "\n").split() if t.strip()]
-    else:
-        universe = tiingo_all_us_tickers(TIINGO_TOKEN) or []
+    # ── Universe info + Run button ────────────────────────────────────────────
+    universe = _load_universe(TIINGO_TOKEN)
+    st.caption(f"📋 Universe: **{len(universe)} quality tickers** (S&P 500 + NASDAQ 100 + popular stocks)")
 
-    if not universe:
-        st.info("👆 Enter ticker symbols above, then click **Run Base Scan**.")
-        return
-
-    st.caption(f"📋 {len(universe)} ticker(s) queued for scan.")
     run_btn = st.button("🚀 Run Base Scan", use_container_width=True, type="primary")
 
-    # ── Execute Scan ──────────────────────────────────────────────────────────
+    # ── Execute Scan (parallel, same pattern as main scanner) ─────────────────
     if run_btn:
-        excluded = []
-        clean = []
-        earn_prog = st.progress(0, text="Checking earnings dates (14-day exclude)...")
-        for i, t in enumerate(universe):
-            if _is_earnings_within_14_days(t, TIINGO_TOKEN):
-                excluded.append(t)
-            else:
-                clean.append(t)
-            earn_prog.progress((i + 1) / len(universe), text=f"Earnings check: {t}")
-        earn_prog.empty()
-
-        if excluded:
-            st.info(f"⚠️ Excluded {len(excluded)} ticker(s) with earnings ≤14 days: {', '.join(excluded)}")
-
         results = []
-        scan_prog = st.progress(0, text="Scanning base formations...")
-        for i, t in enumerate(clean):
-            rec = evaluate_base_formation(t, TIINGO_TOKEN)
-            if rec and rec["BaseScore"] >= min_score:
-                results.append(rec)
-            scan_prog.progress((i + 1) / len(clean), text=f"Scoring {t}… ({i+1}/{len(clean)})")
-        scan_prog.empty()
+        excluded_earn = []
+        total = len(universe)
+        progress = st.progress(0, text="Scanning for base formations…")
 
+        for batch_start in range(0, total, BATCH_SIZE):
+            batch = universe[batch_start: batch_start + BATCH_SIZE]
+
+            def _eval(ticker):
+                if _is_earnings_within_14_days(ticker, TIINGO_TOKEN):
+                    return ("earnings", ticker)
+                rec = evaluate_base_formation(
+                    ticker, TIINGO_TOKEN,
+                    price_min=price_min,
+                    price_max=price_max,
+                    min_avg_vol=min_volume,
+                )
+                return ("result", rec)
+
+            with futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+                futs = {ex.submit(_eval, t): t for t in batch}
+                for f in futures.as_completed(futs):
+                    try:
+                        kind, val = f.result()
+                        if kind == "earnings":
+                            excluded_earn.append(val)
+                        elif kind == "result" and val and val["BaseScore"] >= min_score:
+                            results.append(val)
+                    except Exception:
+                        pass
+
+            scanned = min(batch_start + len(batch), total)
+            progress.progress(
+                scanned / total,
+                text=f"🔎 {scanned}/{total} scanned | Bases found: {len(results)}",
+            )
+            time.sleep(BATCH_PAUSE)
+
+        progress.empty()
         results.sort(key=lambda x: x["BaseScore"], reverse=True)
         st.session_state["base_scan_results"] = results
-        st.success(f"✅ Scan complete — {len(results)} base formation(s) found from {len(clean)} scanned.")
+
+        msg = f"✅ Scan complete — **{len(results)} base formation(s)** from {total} tickers scanned"
+        if excluded_earn:
+            msg += f" | {len(excluded_earn)} excluded (earnings ≤14 days)"
+        st.success(msg)
         st.rerun()
 
     # ── Results Display ───────────────────────────────────────────────────────
     results = st.session_state.get("base_scan_results", [])
     if not results:
-        if not run_btn:
-            st.info("Run a scan to see results here.")
+        st.info("Set your filters above and click **Run Base Scan** to discover consolidating stocks.")
         return
 
     st.markdown(f"### 📋 {len(results)} Base Formation(s) — sorted by score")
@@ -256,7 +308,7 @@ def base_scanner_ui(TIINGO_TOKEN: str):
                     <div style="color:{color};font-size:0.8rem;margin:2px 0 6px;">{rec['Tier']}</div>
                     <div style="font-size:0.88rem;line-height:1.6;">
                         📊 Score: <b>{rec['BaseScore']}/10</b><br/>
-                        🎯 Resistance (breakout trigger): <b>${rec['Resistance']:.2f}</b><br/>
+                        🎯 Breakout trigger: <b>${rec['Resistance']:.2f}</b><br/>
                         📐 vs EMA50: <b>{rec['EMA50_dist_pct']:+.1f}%</b><br/>
                         📉 ATR14: <b>{rec['ATR14']:.2f}</b>
                     </div>
