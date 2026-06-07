@@ -1087,3 +1087,132 @@ def coach_trading_performance(trades: List[Dict[str, Any]], focus: str, api_key:
     except Exception as e:
         logger.error(f"Claude coaching error: {e}")
         return f"❌ Error generating coaching: {str(e)}"
+
+
+def analyze_base_formations(results: List[Dict], token: str, api_key: str,
+                            portfolio_context: str = "") -> str:
+    """
+    AI review of Base Formation Scanner results.
+    For each candidate, fetches live news + 52W context, then asks Claude to
+    rate each base and decide: Worth Stalking / Watch + Wait / Skip.
+
+    Args:
+        results:           List of base scanner result dicts (Symbol, Price, BaseScore,
+                           Tier, Resistance, ATR14, EMA50_dist_pct, Details)
+        token:             Tiingo API token
+        api_key:           Anthropic API key
+        portfolio_context: formatted portfolio risk context string
+
+    Returns:
+        Claude's stalking shortlist with reasoning
+    """
+    try:
+        if not results:
+            return "❌ No base formations to analyze."
+
+        top = results[:8]  # cap at 8 to keep prompt cost manageable
+
+        # ── Market context ──────────────────────────────────────────────────
+        mkt = get_market_context()
+        mkt_section = ""
+        if mkt:
+            mkt_section = (
+                f"=== LIVE MARKET CONTEXT ===\n"
+                f"SPY: ${mkt['spy_price']} | Today: {mkt['spy_day_change']:+.1f}%"
+                f" | 5-Day: {mkt['spy_5d_change']:+.1f}%\n"
+                f"Market Trend: {mkt['market_trend']}\n"
+                f"VIX: {mkt['vix']} → {mkt['fear_level']}\n\n"
+            )
+
+        # ── Per-stock data block ─────────────────────────────────────────────
+        stocks_section = ""
+        for i, rec in enumerate(top, 1):
+            symbol = rec["Symbol"]
+            price  = rec["Price"]
+
+            # 52W high/low and 6-month trend
+            h52w = l52w = pct_from_high = pct_from_low = trend_6m = "N/A"
+            try:
+                df = tiingo_history(symbol, token, days=252)
+                if df is not None and not df.empty:
+                    h52w          = round(float(df["High"].tail(252).max()), 2)
+                    l52w          = round(float(df["Low"].tail(252).min()), 2)
+                    pct_from_high = round((price - h52w) / h52w * 100, 1)
+                    pct_from_low  = round((price - l52w) / l52w * 100, 1)
+                    if len(df) >= 126:
+                        p6m     = float(df["Close"].iloc[-126])
+                        trend_6m = round((price - p6m) / p6m * 100, 1)
+            except Exception:
+                pass
+
+            # Recent news
+            news_articles = get_stock_news(symbol, days=7, token=token)
+            news_text = _format_news_for_claude(news_articles, max_articles=3)
+
+            # Scoring breakdown as plain text
+            details_text = "\n".join(f"  {d}" for d in rec.get("Details", []))
+
+            stocks_section += (
+                f"--- BASE #{i}: {symbol} ---\n"
+                f"Price: ${price:.2f} | Base Score: {rec['BaseScore']}/10 | {rec['Tier']}\n"
+                f"Resistance / Breakout trigger: ${rec['Resistance']:.2f}\n"
+                f"EMA50 distance: {rec['EMA50_dist_pct']:+.1f}% | ATR14: ${rec['ATR14']:.2f}\n"
+                f"52W High: ${h52w} ({pct_from_high}% below) | 52W Low: ${l52w} ({pct_from_low}% above)\n"
+                f"6-Month trend: {trend_6m}%\n"
+                f"Scoring breakdown:\n{details_text}\n"
+                f"Recent news:\n{news_text}\n\n"
+            )
+
+        # ── Prompts ──────────────────────────────────────────────────────────
+        system_prompt = """You are a professional swing trader who specializes in anticipation entries — \
+getting into position BEFORE the breakout happens, not chasing stocks already moving.
+
+You are reviewing base formation candidates: stocks that are coiling, tightening up, and \
+building energy for a potential move. Your job is NOT to find stocks to buy right now. \
+Your job is to decide which setups are worth STALKING — adding to a watchlist and monitoring \
+daily for the breakout trigger.
+
+For each candidate, evaluate:
+1. Quality of the base — is the coiling tight and controlled, or loose and sloppy?
+2. Where is price relative to resistance? Is the breakout trigger price logical and clean?
+3. Does the 6-month trend give the base a tailwind or headwind?
+4. Is there any news that could disrupt the base (earnings risk, sector headwinds, negative catalyst)?
+5. Does the scoring breakdown show genuine consolidation or just a slow bleed?
+
+Your output for each stock must be one of three verdicts:
+✅ WORTH STALKING — add to watchlist, set alert at resistance
+⏳ WATCH + WAIT — promising but needs more time to tighten up
+❌ SKIP — base is not clean enough, pass on this one
+
+Be decisive. A trader reading this needs to know exactly what to do.
+Keep each stock to 3-4 sentences max. Lead with the verdict."""
+
+        portfolio_section = f"{portfolio_context}\n" if portfolio_context else ""
+
+        user_prompt = (
+            f"{portfolio_section}"
+            f"{mkt_section}"
+            f"Base Formation Scanner found {len(top)} candidates. "
+            f"Review each and give your stalking verdict:\n\n"
+            f"{stocks_section}"
+            f"End with a 1-sentence 'MARKET NOTE' on whether current conditions "
+            f"(trend, VIX) favor anticipation entries right now."
+        )
+
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1400,
+            system=[{
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }],
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+
+        return message.content[0].text
+
+    except Exception as e:
+        logger.error(f"Base formation AI error: {e}")
+        return f"❌ Error analyzing base formations: {str(e)}"

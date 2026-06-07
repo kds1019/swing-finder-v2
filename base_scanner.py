@@ -20,6 +20,8 @@ from utils.storage import (
     load_base_scan_metadata, save_base_scan_metadata,
 )
 from utils.universe_builder import CACHE_PATH
+from utils.claude_analyzer import analyze_base_formations
+from utils.portfolio_settings import load_portfolio_settings, format_portfolio_context_for_claude
 
 # ---------------------------------------------------------------------------
 # Universe Loader  (mirrors scanner.py logic, no cross-import needed)
@@ -286,6 +288,39 @@ def base_scanner_ui(TIINGO_TOKEN: str):
         return
 
     st.markdown(f"### 📋 {len(results)} Base Formation(s) — sorted by score")
+
+    # ── AI Stalking Review ────────────────────────────────────────────────────
+    try:
+        anthropic_key = st.secrets.get("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+    except Exception:
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+
+    if not anthropic_key:
+        st.caption("💡 Add ANTHROPIC_API_KEY to secrets to unlock AI Stalking Review.")
+    else:
+        col_ai, _ = st.columns([2, 3])
+        with col_ai:
+            run_ai = st.button(
+                "🤖 AI Stalking Review",
+                type="primary",
+                use_container_width=True,
+                help="Claude reviews each base and gives a verdict: Worth Stalking / Watch + Wait / Skip",
+            )
+        if run_ai:
+            with st.spinner("🤖 Reviewing bases… fetching news, 52W context, and market conditions…"):
+                _port = st.session_state.get("portfolio") or load_portfolio_settings()
+                _port_ctx = format_portfolio_context_for_claude(_port)
+                ai_output = analyze_base_formations(results, TIINGO_TOKEN, anthropic_key, _port_ctx)
+            st.session_state["base_scan_ai_summary"] = ai_output
+
+        if st.session_state.get("base_scan_ai_summary"):
+            with st.expander("🤖 AI Stalking Review", expanded=True):
+                st.markdown(st.session_state["base_scan_ai_summary"])
+                if st.button("🗑️ Clear AI Review", key="clear_base_ai"):
+                    st.session_state["base_scan_ai_summary"] = None
+                    st.rerun()
+
+    st.divider()
     existing_meta = st.session_state.get("base_scan_metadata") or load_base_scan_metadata()
 
     per_row = 3
