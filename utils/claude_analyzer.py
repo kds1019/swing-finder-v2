@@ -10,7 +10,10 @@ import streamlit as st
 import yfinance as yf
 from datetime import datetime, timedelta
 
-from utils.tiingo_api import fetch_tiingo_realtime_quote, tiingo_history
+from utils.tiingo_api import (
+    fetch_tiingo_realtime_quote, tiingo_history,
+    get_tiingo_sector, fetch_institutional_ownership, get_next_earnings_date,
+)
 from utils.fundamentals import get_tiingo_fundamentals_for_claude, format_fundamentals_for_prompt
 from utils.indicators import detect_patterns
 from utils.logger import get_logger
@@ -165,6 +168,92 @@ def _format_news_for_claude(articles: List[Dict[str, Any]], max_articles: int = 
         desc_line = f"\n     → {description[:200]}" if description else ""
         lines.append(f"   {meta}\n   \"{title}\"{desc_line}")
     return "\n".join(lines)
+
+
+def _get_yf_market_intel(symbol: str, current_price: float = 0) -> str:
+    """
+    Fetch analyst consensus targets, short interest, and company name from yfinance.
+    Returns a formatted text block ready to drop into a Claude prompt.
+    Returns empty string on failure so callers can proceed safely.
+    """
+    try:
+        info = yf.Ticker(symbol).info
+        if not info:
+            return ""
+
+        lines = ["=== ANALYST & MARKET INTEL ==="]
+
+        # Company name
+        name = info.get("shortName") or info.get("longName", "")
+        if name:
+            lines.append(f"Company: {name}")
+
+        # Analyst price targets
+        target_mean = info.get("targetMeanPrice")
+        target_high = info.get("targetHighPrice")
+        target_low  = info.get("targetLowPrice")
+        num_analysts = info.get("numberOfAnalystOpinions")
+        rec_mean     = info.get("recommendationMean")
+
+        rec_label = "N/A"
+        if rec_mean is not None:
+            if rec_mean <= 1.5:   rec_label = "Strong Buy"
+            elif rec_mean <= 2.5: rec_label = "Buy"
+            elif rec_mean <= 3.5: rec_label = "Hold"
+            elif rec_mean <= 4.5: rec_label = "Sell"
+            else:                 rec_label = "Strong Sell"
+
+        if target_mean:
+            upside = (
+                round((target_mean - current_price) / current_price * 100, 1)
+                if current_price else "N/A"
+            )
+            range_str = (
+                f" (range ${target_low:.2f}–${target_high:.2f})"
+                if target_low and target_high else ""
+            )
+            analysts_str = f" | {num_analysts} analysts" if num_analysts else ""
+            upside_str   = f" | {upside:+.1f}% upside" if isinstance(upside, float) else ""
+            lines.append(
+                f"Analyst Target: ${target_mean:.2f}{range_str}"
+                f"{analysts_str} | Consensus: {rec_label}{upside_str}"
+            )
+
+        # Short interest
+        short_pct   = info.get("shortPercentOfFloat")
+        short_ratio = info.get("shortRatio")
+        if short_pct is not None:
+            short_str = f"Short Interest: {short_pct * 100:.1f}% of float"
+            if short_ratio:
+                short_str += f" | Days to Cover: {short_ratio:.1f}"
+            lines.append(short_str)
+
+        return "\n".join(lines) if len(lines) > 1 else ""
+    except Exception:
+        return ""
+
+
+def _get_institutional_pct(symbol: str, token: str) -> str:
+    """
+    Fetch total institutional ownership percentage from Tiingo.
+    Returns a single formatted line or empty string on failure.
+    """
+    try:
+        data = fetch_institutional_ownership(symbol, token)
+        if not data:
+            return ""
+        if isinstance(data, list) and data:
+            latest = sorted(data, key=lambda x: x.get("date", ""), reverse=True)[0]
+        elif isinstance(data, dict):
+            latest = data
+        else:
+            return ""
+        total = latest.get("totalInstitutional") or latest.get("institutionalOwnership")
+        if total is not None:
+            return f"Institutional Ownership: {float(total):.1f}%"
+        return ""
+    except Exception:
+        return ""
 
 
 def get_market_context() -> Dict[str, Any]:
@@ -660,6 +749,14 @@ def analyze_scanner_results(confirmed: List[Dict], token: str, api_key: str,
             news = get_stock_news(symbol, days=7, token=token)
             news_block = _format_news_for_claude(news, max_articles=3)
 
+            # Analyst targets + short interest + company name (yfinance)
+            market_intel = _get_yf_market_intel(symbol, current_price)
+
+            # Tiingo fundamentals (cached — no extra cost after scanner pre-fetch)
+            fund = get_tiingo_fundamentals_for_claude(symbol, token)
+            fund_block = format_fundamentals_for_prompt(fund) if fund else ""
+            fund_section = f"   {fund_block}\n" if fund_block else ""
+
             earnings_note = rec.get("EarningsWarning", "") or ""
 
             pat = rec.get("Pattern")
@@ -688,6 +785,8 @@ def analyze_scanner_results(confirmed: List[Dict], token: str, api_key: str,
                 f"   6-Month Trend: {trend_6m}%"
                 f"{pattern_note}"
                 f"{' | ' + earnings_note if earnings_note else ''}\n"
+                f"{('   ' + market_intel + chr(10)) if market_intel else ''}"
+                f"{fund_section}"
                 f"   Recent News:\n{news_block}\n"
             )
 
@@ -742,7 +841,7 @@ Be direct and specific. Traders need decisions, not analysis."""
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=1200,
+            max_tokens=1600,
             system=[{
                 "type": "text",
                 "text": system_prompt,
@@ -801,6 +900,22 @@ def analyze_single_stock(symbol: str, stock_data: Dict[str, Any], token: str, ap
         fund_block = format_fundamentals_for_prompt(fund)
         fund_section = f"\n{fund_block}\n" if fund_block else ""
 
+        # ── Analyst targets + short interest + company name (yfinance) ──
+        market_intel = _get_yf_market_intel(symbol, current_price)
+        market_intel_section = f"\n{market_intel}\n" if market_intel else ""
+
+        # ── Institutional ownership (Tiingo) ──
+        inst_pct = _get_institutional_pct(symbol, token)
+        inst_section = f"{inst_pct}\n" if inst_pct else ""
+
+        # ── Exact next earnings date ──
+        raw_earnings = get_next_earnings_date(symbol, token)
+        earnings_str = (
+            raw_earnings.split("T")[0]
+            if raw_earnings and raw_earnings not in ("N/A", "Not Scheduled")
+            else "Not scheduled"
+        )
+
         # ── Live market context (SPY + VIX) ──
         mkt = get_market_context()
         mkt_section = ""
@@ -825,7 +940,8 @@ Be specific with price levels. Give the trader clear decisions they can act on i
             f"{mkt_section}"
             f"=== STOCK: {symbol} ===\n"
             f"Current Price: ${current_price:.2f} | Setup: {stock_data.get('setup_type', 'N/A')}"
-            f" | Sector: {stock_data.get('sector', 'N/A')}\n\n"
+            f" | Sector: {stock_data.get('sector', 'N/A')}\n"
+            f"Next Earnings: {earnings_str}\n\n"
             f"=== TRADE PLAN ===\n"
             f"Entry: ${stock_data.get('entry', 0):.2f} | Stop: ${stock_data.get('stop', 0):.2f}"
             f" | Target: ${stock_data.get('target', 0):.2f} | R:R: {stock_data.get('rr_ratio', 0):.1f}:1\n\n"
@@ -839,24 +955,28 @@ Be specific with price levels. Give the trader clear decisions they can act on i
             f"52-Week Low:  ${l52w} ({pct_from_low}% above low)\n"
             f"6-Month Price Change: {trend_6m}%\n"
             f"{fund_section}"
+            f"{market_intel_section}"
+            f"{inst_section}"
             f"=== RECENT NEWS (Last 7 Days) ===\n"
             f"{news_lines}\n\n"
             f"Using ONLY the data above, provide:\n\n"
             f"**1. SETUP QUALITY** (⭐ rating 1-5 + 1 sentence why)\n"
             f"**2. RECOMMENDATION** (Enter Now / Wait for Confirmation / Skip)\n"
             f"   - If Wait: what exact price/signal confirms entry?\n"
-            f"**3. FUNDAMENTALS CHECK** — do margins, debt, and ROE support this trade?\n"
-            f"**4. NEWS IMPACT** — does recent news support or threaten this setup?\n"
-            f"**5. TREND CONTEXT** — does the 6-month/52W picture confirm the trade?\n"
-            f"**6. KEY RISK** — what is the #1 thing that could invalidate this?\n"
-            f"**7. ACTION PLAN** — specific prices: entry trigger, stop level, first target\n\n"
+            f"**3. ANALYST VIEW** — where do analysts see fair value vs current price? Does the target support the trade?\n"
+            f"**4. FUNDAMENTALS CHECK** — do margins, debt, and ROE support this trade?\n"
+            f"**5. SHORT INTEREST** — does short interest create squeeze risk or signal fundamental problems?\n"
+            f"**6. NEWS IMPACT** — does recent news support or threaten this setup?\n"
+            f"**7. TREND CONTEXT** — does the 6-month/52W picture confirm the trade?\n"
+            f"**8. KEY RISK** — what is the #1 thing that could invalidate this?\n"
+            f"**9. ACTION PLAN** — specific prices: entry trigger, stop level, first target\n\n"
             f"Be direct. Give specific price levels. No vague advice."
         )
 
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=1500,
+            max_tokens=1800,
             system=[{
                 "type": "text",
                 "text": system_prompt,
@@ -1149,17 +1269,42 @@ def analyze_base_formations(results: List[Dict], token: str, api_key: str,
             news_articles = get_stock_news(symbol, days=7, token=token)
             news_text = _format_news_for_claude(news_articles, max_articles=3)
 
+            # Tiingo fundamentals
+            fund = get_tiingo_fundamentals_for_claude(symbol, token)
+            fund_block = format_fundamentals_for_prompt(fund) if fund else ""
+            fund_section = f"{fund_block}\n" if fund_block else ""
+
+            # Analyst targets + short interest + company name (yfinance)
+            market_intel = _get_yf_market_intel(symbol, price)
+
+            # Institutional ownership (Tiingo)
+            inst_pct = _get_institutional_pct(symbol, token)
+
+            # Sector + exact earnings date
+            sector = get_tiingo_sector(symbol, token)
+            raw_earnings = get_next_earnings_date(symbol, token)
+            earnings_str = (
+                raw_earnings.split("T")[0]
+                if raw_earnings and raw_earnings not in ("N/A", "Not Scheduled")
+                else "Not scheduled"
+            )
+
             # Scoring breakdown as plain text
             details_text = "\n".join(f"  {d}" for d in rec.get("Details", []))
 
             stocks_section += (
                 f"--- BASE #{i}: {symbol} ---\n"
+                f"Sector: {sector} | Next Earnings: {earnings_str}\n"
                 f"Price: ${price:.2f} | Base Score: {rec['BaseScore']}/10 | {rec['Tier']}\n"
                 f"Resistance / Breakout trigger: ${rec['Resistance']:.2f}\n"
                 f"EMA50 distance: {rec['EMA50_dist_pct']:+.1f}% | ATR14: ${rec['ATR14']:.2f}\n"
+                f"Chandelier stop (2×ATR): ~${price - 2 * rec['ATR14']:.2f}\n"
                 f"52W High: ${h52w} ({pct_from_high}% below) | 52W Low: ${l52w} ({pct_from_low}% above)\n"
                 f"6-Month trend: {trend_6m}%\n"
+                f"{(market_intel + chr(10)) if market_intel else ''}"
+                f"{('Institutional: ' + inst_pct + chr(10)) if inst_pct else ''}"
                 f"Scoring breakdown:\n{details_text}\n"
+                f"{fund_section}"
                 f"Recent news:\n{news_text}\n\n"
             )
 
@@ -1175,17 +1320,22 @@ daily for the breakout trigger.
 For each candidate, evaluate:
 1. Quality of the base — is the coiling tight and controlled, or loose and sloppy?
 2. Where is price relative to resistance? Is the breakout trigger price logical and clean?
-3. Does the 6-month trend give the base a tailwind or headwind?
-4. Is there any news that could disrupt the base (earnings risk, sector headwinds, negative catalyst)?
-5. Does the scoring breakdown show genuine consolidation or just a slow bleed?
+3. Does the 6-month trend and analyst consensus support a move to the upside?
+4. Does the analyst target provide meaningful upside vs the breakout trigger?
+5. Is short interest a tailwind (squeeze potential) or a warning sign of smart money shorting?
+6. Are institutional owners a positive (smart money is in) or is ownership declining?
+7. Is there any news or earnings risk that could disrupt the base before it resolves?
+8. Do the fundamentals (margins, ROE, debt) support the company's ability to move higher?
 
 Your output for each stock must be one of three verdicts:
 ✅ WORTH STALKING — add to watchlist, set alert at resistance
 ⏳ WATCH + WAIT — promising but needs more time to tighten up
 ❌ SKIP — base is not clean enough, pass on this one
 
-Be decisive. A trader reading this needs to know exactly what to do.
-Keep each stock to 3-4 sentences max. Lead with the verdict."""
+After your verdict, give: entry zone, breakout trigger, stop level (never below Chandelier stop), \
+estimated R:R using analyst target as the destination.
+
+Be decisive. A trader reading this needs to know exactly what to do."""
 
         portfolio_section = f"{portfolio_context}\n" if portfolio_context else ""
 
@@ -1195,14 +1345,14 @@ Keep each stock to 3-4 sentences max. Lead with the verdict."""
             f"Base Formation Scanner found {len(top)} candidates. "
             f"Review each and give your stalking verdict:\n\n"
             f"{stocks_section}"
-            f"End with a 1-sentence 'MARKET NOTE' on whether current conditions "
-            f"(trend, VIX) favor anticipation entries right now."
+            f"End with a 'MARKET NOTE' on whether current conditions (trend, VIX) "
+            f"favor anticipation entries, and a 'VIX GATE' note if VIX is near or above 20."
         )
 
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=1400,
+            max_tokens=2000,
             system=[{
                 "type": "text",
                 "text": system_prompt,
