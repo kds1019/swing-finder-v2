@@ -1366,3 +1366,81 @@ Be decisive. A trader reading this needs to know exactly what to do."""
     except Exception as e:
         logger.error(f"Base formation AI error: {e}")
         return f"❌ Error analyzing base formations: {str(e)}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Persistent follow-up chat  (shared across all analysis pages)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def render_ai_chat(context_key: str, api_key: str, initial_analysis: str) -> None:
+    """
+    Render a persistent follow-up chat interface below any Claude analysis output.
+
+    Conversation history is stored in st.session_state["chat_<context_key>"] so
+    each analysis page keeps its own independent thread.
+
+    Args:
+        context_key:      Unique string key, e.g. "scanner", "base_scanner", "analyzer_AAPL"
+        api_key:          Anthropic API key
+        initial_analysis: The Claude analysis text used as context for follow-up questions
+    """
+    chat_key = f"chat_{context_key}"
+    if chat_key not in st.session_state:
+        st.session_state[chat_key] = []
+
+    history: list = st.session_state[chat_key]
+
+    # ── Header + clear button ────────────────────────────────────────────────
+    hcol, ccol = st.columns([5, 1])
+    with hcol:
+        st.markdown("##### 💬 Follow-up Chat")
+    with ccol:
+        if history and st.button("🗑️ Clear", key=f"clr_chat_{context_key}"):
+            st.session_state[chat_key] = []
+            st.rerun()
+
+    # ── Message history ──────────────────────────────────────────────────────
+    for msg in history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # ── Chat input ───────────────────────────────────────────────────────────
+    user_q = st.chat_input(
+        "Ask a follow-up question about this analysis…",
+        key=f"chat_input_{context_key}",
+    )
+
+    if user_q:
+        history.append({"role": "user", "content": user_q})
+
+        system = (
+            "You are an expert swing trading analyst continuing a conversation. "
+            "Use ONLY the data already provided in the analysis context below — do not introduce "
+            "new prices, news, or facts from your training data. Be concise and specific.\n\n"
+            f"=== ORIGINAL ANALYSIS ===\n{initial_analysis}"
+        )
+
+        messages_for_api = [
+            {"role": m["role"], "content": m["content"]} for m in history
+        ]
+
+        with st.spinner("🤖 Thinking…"):
+            try:
+                client = anthropic.Anthropic(api_key=api_key)
+                resp = client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=800,
+                    system=[{
+                        "type": "text",
+                        "text": system,
+                        "cache_control": {"type": "ephemeral"},
+                    }],
+                    messages=messages_for_api,
+                )
+                reply = resp.content[0].text
+            except Exception as exc:
+                reply = f"❌ Chat error: {exc}"
+
+        history.append({"role": "assistant", "content": reply})
+        st.session_state[chat_key] = history
+        st.rerun()

@@ -23,7 +23,7 @@ from utils.relative_strength import (
 )
 from utils.multi_timeframe import get_multi_timeframe_analysis, format_mtf_display
 from utils.target_calculator import calculate_fibonacci_target, format_target_display
-from utils.claude_analyzer import analyze_single_stock
+from utils.claude_analyzer import analyze_single_stock, render_ai_chat
 from utils.portfolio_settings import load_portfolio_settings, calc_position_size, format_portfolio_context_for_claude
 
 # ===================== MOBILE OPTIMIZATION: DATA CACHING =====================
@@ -1428,7 +1428,13 @@ def analyzer_ui(TIINGO_TOKEN):
                     st.markdown(st.session_state[f"analyzer_ai_{symbol}"])
                     if st.button("🗑️ Clear", key="clear_analyzer_ai"):
                         st.session_state[f"analyzer_ai_{symbol}"] = None
+                        st.session_state[f"chat_analyzer_{symbol}"] = []
                         st.rerun()
+                    render_ai_chat(
+                        f"analyzer_{symbol}",
+                        anthropic_key_az,
+                        st.session_state[f"analyzer_ai_{symbol}"],
+                    )
 
             st.divider()
             # ─────────────────────────────────────────────────────────────────

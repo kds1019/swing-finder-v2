@@ -29,7 +29,7 @@ from utils.indicators import (
 from utils.storage import load_json, save_json, load_watchlists_from_gist, save_watchlists_to_gist, load_base_scan_metadata
 from utils.fundamentals import get_tiingo_fundamentals_for_claude, calculate_fundamental_score
 from utils.target_calculator import calculate_scanner_target
-from utils.claude_analyzer import analyze_scanner_results
+from utils.claude_analyzer import analyze_scanner_results, render_ai_chat
 from utils.portfolio_settings import load_portfolio_settings, format_portfolio_context_for_claude
 
 # ---------------- Universe Loader ----------------
@@ -1338,7 +1338,9 @@ def scanner_ui(TIINGO_TOKEN):
                     st.markdown(st.session_state["scanner_ai_summary"])
                     if st.button("🗑️ Clear AI Summary", key="clear_ai_summary"):
                         st.session_state["scanner_ai_summary"] = None
+                        st.session_state["chat_scanner"] = []
                         st.rerun()
+                render_ai_chat("scanner", anthropic_key, st.session_state["scanner_ai_summary"])
         st.divider()
         # ─────────────────────────────────────────────────────────────────────
 

@@ -20,7 +20,7 @@ from utils.storage import (
     load_base_scan_metadata, save_base_scan_metadata,
 )
 from utils.universe_builder import CACHE_PATH
-from utils.claude_analyzer import analyze_base_formations
+from utils.claude_analyzer import analyze_base_formations, render_ai_chat
 from utils.portfolio_settings import load_portfolio_settings, format_portfolio_context_for_claude
 
 # ---------------------------------------------------------------------------
@@ -318,7 +318,9 @@ def base_scanner_ui(TIINGO_TOKEN: str):
                 st.markdown(st.session_state["base_scan_ai_summary"])
                 if st.button("🗑️ Clear AI Review", key="clear_base_ai"):
                     st.session_state["base_scan_ai_summary"] = None
+                    st.session_state["chat_base_scanner"] = []
                     st.rerun()
+            render_ai_chat("base_scanner", anthropic_key, st.session_state["base_scan_ai_summary"])
 
     st.divider()
     existing_meta = st.session_state.get("base_scan_metadata") or load_base_scan_metadata()

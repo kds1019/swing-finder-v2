@@ -23,6 +23,7 @@ from utils.tiingo_api import fetch_tiingo_intraday
 from utils.tiingo_api import fetch_tiingo_realtime_quote
 from utils.storage import load_gist_json, save_gist_json
 from utils.active_trade_analyzer import analyze_active_trades
+from utils.claude_analyzer import render_ai_chat
 
 
 
@@ -1948,6 +1949,7 @@ def show_active_trader_coaching() -> None:
             st.caption(f"💾 Last analysis: {', '.join(trades_analyzed)} at {st.session_state.get('trade_analysis_time', 'Unknown')}")
             with st.expander("📊 View Last Trade Analysis", expanded=False):
                 st.markdown(st.session_state['trade_analysis'])
+            render_ai_chat("active_trades", anthropic_key, st.session_state['trade_analysis'])
 
     st.markdown("---")
 
