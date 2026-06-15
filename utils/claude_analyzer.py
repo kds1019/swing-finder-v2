@@ -525,7 +525,7 @@ def quick_analyze_watchlist(watchlist: List[Dict], token: str, api_key: str) -> 
         client = anthropic.Anthropic(api_key=api_key)
 
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=900,
             system=[
                 {
@@ -675,7 +675,7 @@ def deep_analyze_stocks(selected_stocks: List[Dict], token: str, api_key: str,
         client = anthropic.Anthropic(api_key=api_key)
 
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=4000,
             system=[
                 {
@@ -840,7 +840,7 @@ Be direct and specific. Traders need decisions, not analysis."""
 
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=1600,
             system=[{
                 "type": "text",
@@ -975,7 +975,7 @@ Be specific with price levels. Give the trader clear decisions they can act on i
 
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=1800,
             system=[{
                 "type": "text",
@@ -1057,7 +1057,7 @@ def review_single_trade(trade: Dict[str, Any], api_key: str) -> str:
 
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=900,
             system=[{
                 "type": "text",
@@ -1192,7 +1192,7 @@ def coach_trading_performance(trades: List[Dict[str, Any]], focus: str, api_key:
 
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=1200,
             system=[{
                 "type": "text",
@@ -1351,7 +1351,7 @@ Be decisive. A trader reading this needs to know exactly what to do."""
 
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=2000,
             system=[{
                 "type": "text",
@@ -1428,7 +1428,7 @@ def render_ai_chat(context_key: str, api_key: str, initial_analysis: str) -> Non
             try:
                 client = anthropic.Anthropic(api_key=api_key)
                 resp = client.messages.create(
-                    model="claude-sonnet-4-20250514",
+                    model="claude-sonnet-4-5-20250929",
                     max_tokens=800,
                     system=[{
                         "type": "text",
