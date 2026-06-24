@@ -420,12 +420,15 @@ def _compute_fields(row: Dict[str, Any]) -> Dict[str, Any]:
 
         shares = float(row.get("shares", row.get("size", 0)) or 0)
         last = float(row.get("last_price", entry or 0) or 0)
+        realized_pnl = float(row.get("realized_pnl", 0) or 0)
 
         risk_ps = (entry - stop) if entry and stop else 0.0
         reward_ps = (target - entry) if target and entry else 0.0
         rr = (reward_ps / risk_ps) if risk_ps else 0.0
         unreal_r = ((last - entry) / risk_ps) if (risk_ps and last) else 0.0
         pos_risk = risk_ps * shares if (risk_ps and shares) else 0.0
+        unrealized_pnl_dollar = round((last - entry) * shares, 2) if (last and entry and shares) else 0.0
+        total_pnl_dollar = round(unrealized_pnl_dollar + realized_pnl, 2)
         to_target = (
             (target - last) / (target - entry)
             if (target and entry and (target - entry) != 0)
@@ -444,6 +447,8 @@ def _compute_fields(row: Dict[str, Any]) -> Dict[str, Any]:
                 "rr": round(rr, 2),
                 "unrealized_r": round(unreal_r, 2),
                 "position_risk": round(pos_risk, 2),
+                "unrealized_pnl_dollar": unrealized_pnl_dollar,
+                "total_pnl_dollar": total_pnl_dollar,
                 "progress_to_target": round(1 - to_target, 3)
                 if isinstance(to_target, (float, int))
                 else None,
@@ -1009,6 +1014,19 @@ def _sidebar_controls(rows: List[Dict[str, Any]]) -> str:
         else:
             st.sidebar.info("Pick an open trade to close.")
 
+    if st.sidebar.button("📤 Partial Exit", key="atc_partial", use_container_width=True):
+        if selected != "(new)":
+            row = next(
+                (r for r in rows if r.get("symbol") == selected and r.get("status") == "OPEN"),
+                None,
+            )
+            if row:
+                st.session_state["partial_exit_trade"] = row.copy()
+                st.session_state["show_partial_modal"] = True
+                st.rerun()
+        else:
+            st.sidebar.info("Pick an open trade to partially exit.")
+
     return action
 
 
@@ -1473,6 +1491,19 @@ def _render_open_positions(rows: List[Dict[str, Any]]) -> None:
         c[3].metric("Risk/Share", r.get("risk_per_share", 0))
         c[4].metric("Pos Risk $", r.get("position_risk", 0))
 
+        # P&L row — always show unrealized; show banked + total when partials exist
+        _unrealized = float(r.get("unrealized_pnl_dollar", 0) or 0)
+        _realized   = float(r.get("realized_pnl", 0) or 0)
+        _total      = float(r.get("total_pnl_dollar", 0) or 0)
+        _partials   = r.get("partial_exits", [])
+        if _realized != 0 or _partials:
+            pc1, pc2, pc3 = st.columns(3)
+            pc1.metric("📈 Unrealized P&L", f"${_unrealized:+,.2f}")
+            pc2.metric("💰 Banked", f"${_realized:+,.2f}")
+            pc3.metric("🏆 Total P&L", f"${_total:+,.2f}")
+        else:
+            st.metric("📈 Unrealized P&L", f"${_unrealized:+,.2f}")
+
         # Persist quick last price edits (and recompute)
         prev_last = float(r.get("last_price", r.get("entry", 0)) or 0)
         if abs(last_val - prev_last) > 1e-9:
@@ -1694,6 +1725,133 @@ def active_trades_ui() -> None:
                     st.rerun()
 
         show_close_dialog()
+
+    # ===================== Partial Exit Modal =====================
+    if st.session_state.get("show_partial_modal") and "partial_exit_trade" in st.session_state:
+        partial_trade = st.session_state["partial_exit_trade"]
+
+        @st.dialog("📤 Partial Exit")
+        def show_partial_exit_dialog():
+            sy = partial_trade.get("symbol", "")
+            total_shares = float(partial_trade.get("shares", 0) or 0)
+            planned_entry = float(partial_trade.get("entry", 0) or 0)
+            actual_entry = float(partial_trade.get("actual_entry", 0) or 0)
+            entry = actual_entry if actual_entry > 0 else planned_entry
+            last_price = float(partial_trade.get("last_price", entry) or entry)
+            realized_so_far = float(partial_trade.get("realized_pnl", 0) or 0)
+            prev_partials = partial_trade.get("partial_exits", [])
+
+            st.markdown(f"**{sy}** — {total_shares:.0f} shares open | entry ${entry:.2f}")
+            if realized_so_far != 0:
+                sign = "+" if realized_so_far >= 0 else ""
+                st.caption(f"💰 Already banked from previous partials: ${sign}{realized_so_far:,.2f}")
+            if prev_partials:
+                with st.expander(f"📋 {len(prev_partials)} prior partial(s)", expanded=False):
+                    for p in prev_partials:
+                        st.caption(
+                            f"{p.get('date','?')} — {p.get('shares',0):.0f} shares "
+                            f"@ ${p.get('exit_price',0):.2f} → ${p.get('pnl',0):+,.2f} ({p.get('reason','')})"
+                        )
+            st.markdown("---")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                shares_to_exit = st.number_input(
+                    "Shares to Exit",
+                    min_value=1.0,
+                    max_value=float(total_shares),
+                    value=float(total_shares),
+                    step=1.0,
+                    key="partial_shares",
+                    help="Exact number of shares you are selling",
+                )
+            with col2:
+                pct = (shares_to_exit / total_shares * 100) if total_shares > 0 else 0
+                st.metric("% of Position", f"{pct:.0f}%")
+
+            exit_price = st.number_input(
+                "Exit Price",
+                min_value=0.01,
+                value=float(last_price),
+                step=0.01,
+                key="partial_exit_price",
+                help="The price you actually sold at",
+            )
+
+            exit_reason = st.selectbox(
+                "Reason",
+                ["Partial Target", "Protect Profits", "Reduce Risk",
+                 "Trailing Stop", "Manual", "Other"],
+                key="partial_reason",
+            )
+
+            # Live P&L preview
+            pnl_this = (exit_price - entry) * shares_to_exit
+            pnl_pct = ((exit_price - entry) / entry * 100) if entry else 0
+            remaining = total_shares - shares_to_exit
+            new_total = realized_so_far + pnl_this
+
+            st.markdown("---")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("This Exit P&L", f"${pnl_this:+,.2f}", f"{pnl_pct:+.1f}%")
+            col2.metric("Shares Remaining", f"{remaining:.0f}")
+            col3.metric("Total Banked After", f"${new_total:+,.2f}")
+
+            if remaining == 0:
+                st.warning("⚠️ Exiting ALL shares — trade will be fully closed.")
+
+            st.markdown("---")
+            btn1, btn2 = st.columns(2)
+            with btn1:
+                if st.button("❌ Cancel", use_container_width=True):
+                    st.session_state["show_partial_modal"] = False
+                    st.session_state.pop("partial_exit_trade", None)
+                    st.rerun()
+            with btn2:
+                if st.button("✅ Confirm Exit", use_container_width=True, type="primary"):
+                    for i, r in enumerate(rows):
+                        if r.get("symbol") == sy and r.get("status") == "OPEN":
+                            # Accumulate realized P&L
+                            r["realized_pnl"] = round(
+                                float(r.get("realized_pnl", 0) or 0) + pnl_this, 2
+                            )
+                            # Append to partial exits log
+                            exits_log = r.get("partial_exits", [])
+                            exits_log.append({
+                                "date": dt.date.today().isoformat(),
+                                "shares": float(shares_to_exit),
+                                "exit_price": float(exit_price),
+                                "pnl": round(pnl_this, 2),
+                                "reason": exit_reason,
+                            })
+                            r["partial_exits"] = exits_log
+
+                            if remaining <= 0:
+                                r["status"] = "CLOSED"
+                                r["closed"] = dt.date.today().isoformat()
+                                r["shares"] = 0.0
+                            else:
+                                r["shares"] = float(remaining)
+
+                            rows[i] = _compute_fields(r)
+                            break
+
+                    _save_trades(rows)
+
+                    # Journal the partial lot as its own entry
+                    journal_trade = partial_trade.copy()
+                    journal_trade["shares"] = float(shares_to_exit)
+                    add_to_journal(
+                        journal_trade,
+                        exit_price,
+                        f"Partial Exit — {exit_reason} ({shares_to_exit:.0f} of {total_shares:.0f} shares)",
+                    )
+
+                    st.session_state["show_partial_modal"] = False
+                    st.session_state.pop("partial_exit_trade", None)
+                    st.rerun()
+
+        show_partial_exit_dialog()
 
     # ===================== Performance Analytics Dashboard =====================
     stats = calculate_performance_stats()
