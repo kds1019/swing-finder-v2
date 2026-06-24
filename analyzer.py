@@ -90,61 +90,6 @@ def calculate_cached_indicators(df: pd.DataFrame):
 
     return df
 
-def _render_entry_coaching(symbol: str, setup_type: str, indicators: dict, notes: str = "",
-                          entry: float = None, stop: float = None, target: float = None):
-    """Show the entry coaching prompt with one-click copy - optimized for Claude AI."""
-
-    # Calculate risk/reward if all values present
-    rr_text = ""
-    if entry and stop and target:
-        risk_pct = abs((entry - stop) / entry) * 100
-        reward_pct = abs((target - entry) / entry) * 100
-        rr_ratio = reward_pct / risk_pct if risk_pct > 0 else 0
-        rr_text = f"""
-🎯 MY TRADE PLAN:
-- Entry: ${entry:.2f}
-- Stop Loss: ${stop:.2f}
-- Target: ${target:.2f}
-- Risk: {risk_pct:.1f}% | Reward: {reward_pct:.1f}% | R:R: {rr_ratio:.2f}:1
-"""
-
-    # Build Claude-optimized prompt
-    prompt_text = f"""Act as my swing trading coach. Focus on education and risk management.
-
-📊 STOCK DATA:
-Symbol: {symbol}
-Current Price: ${indicators.get('current_price', 'N/A')}
-Setup: {setup_type}
-
-📈 TECHNICAL INDICATORS:
-- RSI: {indicators.get('rsi', 'N/A')}
-- EMA20: ${indicators.get('ema20', 'N/A'):.2f} (Price {'above ✅' if indicators.get('price_above_ema20') else 'below ❌'})
-- EMA50: ${indicators.get('ema50', 'N/A'):.2f} (Trend: {'Up ✅' if indicators.get('ema20_above_ema50') else 'Down ❌'})
-- Volume: {indicators.get('volume_ratio', 'N/A')}x average
-- ATR: {indicators.get('atr', 'N/A')}
-- Pattern: {indicators.get('pattern', 'None detected')}
-{rr_text}
-❓ COACHING QUESTIONS:
-1. Is this entry timing optimal or should I wait for better confirmation?
-2. What specific signals should I look for before entering?
-3. What could invalidate this setup (red flags)?
-4. How should I manage this trade (position sizing, scaling, trailing stop)?
-5. What's the probability of success based on current market conditions?
-
-📋 INSTRUCTIONS:
-- Use live market data from Yahoo Finance or TradingView to validate my analysis
-- Be specific and actionable (not generic advice)
-- Point out any flaws in my plan
-- Suggest improvements to my risk management
-- Rate this setup 1-10 and explain why
-
-Notes: {notes or 'None'}
-
-Remember: I'm looking for COACHING to improve my skills, not just trade validation.
-"""
-
-    # Removed: Copy for Chat feature (replaced with built-in Claude AI analysis)
-
 # ===================== MOBILE OPTIMIZATION: CONFIGURATION =====================
 def is_mobile():
     """Detect if user is on mobile device (simple heuristic)."""

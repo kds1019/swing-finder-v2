@@ -75,6 +75,7 @@ data/alert_log.json
 data/watchlist_enhanced.json
 data/journal_entries.json
 data/backtest_results.json
+data/trade_journal.json
 
 # Backup files
 *.bak
